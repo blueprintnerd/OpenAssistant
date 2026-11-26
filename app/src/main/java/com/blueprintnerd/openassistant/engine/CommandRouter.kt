@@ -240,15 +240,54 @@ class CommandRouter(
                 return AssistantResponse("Messages", msg, cardType = CardType.ACTION_CONFIRMATION)
             }
 
-        // 13. Navigation & Maps
+        // 13. Navigation & Maps (including "navigate home" / "go to work" + saved addresses)
         Regex(
-            """^(?:navigate to|directions to|take me to|drive to|walk to|bike to|cycle to|route to|how do i get to|how to get to|show me|find)\s+(.+?)(?:\s+on the map)?$""",
+            """^(?:set\s+my\s+|my\s+)?(home|work)\s+address\s+(?:to|is)\s+(.+)$""",
             RegexOption.IGNORE_CASE,
         ).matchEntire(input)?.let { m ->
-            val dest = m.groupValues[1].trim()
-            if (!lower.startsWith("find out") && dest.isNotEmpty()) {
-                val msg = device.navigateTo(dest)
-                return AssistantResponse("Navigation", msg, cardType = CardType.ACTION_CONFIRMATION, dismissAfterMs = 1500)
+            val kind = m.groupValues[1].lowercase(Locale.US)
+            val addr = m.groupValues[2].trim()
+            if (kind == "home") store.homeAddress = addr else store.workAddress = addr
+            val label = kind.replaceFirstChar { it.uppercase() }
+            return AssistantResponse("Saved Places", "$label address saved as $addr.", cardType = CardType.ACTION_CONFIRMATION)
+        }
+        Regex(
+            """^(?:navigate(?:\s+to)?|directions(?:\s+to)?|take me(?:\s+to)?|drive(?:\s+to)?|walk(?:\s+to)?|bike(?:\s+to)?|cycle(?:\s+to)?|route(?:\s+to)?|go(?:\s+to)?|how do i get to|how to get to|show me|find)\s+(.+?)(?:\s+on the map)?$""",
+            RegexOption.IGNORE_CASE,
+        ).matchEntire(input)?.let { m ->
+            val rawDest = m.groupValues[1].trim()
+            val destLower = rawDest.lowercase(Locale.US)
+            if (!lower.startsWith("find out") && rawDest.isNotEmpty()) {
+                when (destLower) {
+                    "home", "my home", "my house" -> {
+                        val saved = store.homeAddress
+                        if (saved.isBlank()) {
+                            return AssistantResponse(
+                                title = "Navigation",
+                                body = "No Home address saved yet. Set it in Settings, or say \"Set my home address to ...\".",
+                                cardType = CardType.TEXT,
+                            )
+                        }
+                        val msg = device.navigateTo(saved)
+                        return AssistantResponse("Navigation", msg, cardType = CardType.ACTION_CONFIRMATION, dismissAfterMs = 1500)
+                    }
+                    "work", "my work", "the office", "office" -> {
+                        val saved = store.workAddress
+                        if (saved.isBlank()) {
+                            return AssistantResponse(
+                                title = "Navigation",
+                                body = "No Work address saved yet. Set it in Settings, or say \"Set my work address to ...\".",
+                                cardType = CardType.TEXT,
+                            )
+                        }
+                        val msg = device.navigateTo(saved)
+                        return AssistantResponse("Navigation", msg, cardType = CardType.ACTION_CONFIRMATION, dismissAfterMs = 1500)
+                    }
+                    else -> {
+                        val msg = device.navigateTo(rawDest)
+                        return AssistantResponse("Navigation", msg, cardType = CardType.ACTION_CONFIRMATION, dismissAfterMs = 1500)
+                    }
+                }
             }
         }
         Regex("""^(.+?)\s+near me$""", RegexOption.IGNORE_CASE).matchEntire(input)?.let { m ->

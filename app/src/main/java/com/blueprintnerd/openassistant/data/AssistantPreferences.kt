@@ -88,6 +88,14 @@ class AssistantPreferences(context: Context) : AssistantDataStore {
         }
         set(value) = prefs.edit().putString(KEY_MUSIC_PROVIDER, value.name).apply()
 
+    override var homeAddress: String
+        get() = prefs.getString(KEY_HOME_ADDRESS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_HOME_ADDRESS, value.trim()).apply()
+
+    override var workAddress: String
+        get() = prefs.getString(KEY_WORK_ADDRESS, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_WORK_ADDRESS, value.trim()).apply()
+
     override var homeAssistantUrl: String
         get() = prefs.getString(KEY_HA_URL, "") ?: ""
         set(value) = prefs.edit().putString(KEY_HA_URL, value.trim().trimEnd('/')).apply()
@@ -222,6 +230,8 @@ class AssistantPreferences(context: Context) : AssistantDataStore {
         private const val KEY_DEFAULT_CITY = "default_city"
         private const val KEY_SEARCH_ENGINE = "search_engine"
         private const val KEY_MUSIC_PROVIDER = "music_provider"
+        private const val KEY_HOME_ADDRESS = "home_address"
+        private const val KEY_WORK_ADDRESS = "work_address"
         private const val KEY_HA_URL = "ha_url"
         private const val KEY_HA_TOKEN = "ha_token"
         private const val KEY_SHOPPING_LIST = "shopping_list"

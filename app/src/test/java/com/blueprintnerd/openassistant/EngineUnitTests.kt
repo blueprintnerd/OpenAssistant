@@ -49,6 +49,8 @@ class EngineUnitTests {
         override var defaultCity = "New York"
         override var searchEngine = SearchEngine.DUCKDUCKGO
         override var musicProvider = MusicProvider.AUTO
+        override var homeAddress = ""
+        override var workAddress = ""
         override var homeAssistantUrl = ""
         override var homeAssistantToken = ""
         private val shopping = mutableListOf<String>()
@@ -165,5 +167,9 @@ class EngineUnitTests {
 
         val nearMeResp = router.handle("coffee shops near me")
         assertEquals("Nav:coffee shops", nearMeResp.body)
+
+        router.handle("set my home address to 123 Main St")
+        val homeNavResp = router.handle("navigate home")
+        assertEquals("Nav:123 Main St", homeNavResp.body)
     }
 }

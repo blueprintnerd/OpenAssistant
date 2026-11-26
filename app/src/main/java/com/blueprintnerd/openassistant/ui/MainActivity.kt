@@ -388,6 +388,8 @@ private fun SimpleSettingsScreen(
     var chimeEnabled by remember { mutableStateOf(app.preferences.chimeEnabled) }
     var useFahrenheit by remember { mutableStateOf(app.preferences.useFahrenheit) }
     var defaultCity by remember { mutableStateOf(app.preferences.defaultCity) }
+    var homeAddress by remember { mutableStateOf(app.preferences.homeAddress) }
+    var workAddress by remember { mutableStateOf(app.preferences.workAddress) }
     var selectedEngine by remember { mutableStateOf(app.preferences.searchEngine) }
     var selectedMusic by remember { mutableStateOf(app.preferences.musicProvider) }
     var shoppingList by remember { mutableStateOf(app.preferences.getShoppingList()) }
@@ -538,6 +540,30 @@ private fun SimpleSettingsScreen(
                         app.preferences.defaultCity = it
                     },
                     label = { Text("Your city (for weather)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = homeAddress,
+                    onValueChange = {
+                        homeAddress = it
+                        app.preferences.homeAddress = it
+                    },
+                    label = { Text("Home address (for \"navigate home\")") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = workAddress,
+                    onValueChange = {
+                        workAddress = it
+                        app.preferences.workAddress = it
+                    },
+                    label = { Text("Work address (for \"navigate to work\")") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),

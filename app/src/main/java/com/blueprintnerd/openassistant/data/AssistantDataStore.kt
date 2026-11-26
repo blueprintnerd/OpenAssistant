@@ -5,6 +5,8 @@ interface AssistantDataStore {
     val defaultCity: String
     val searchEngine: SearchEngine
     val musicProvider: MusicProvider
+    var homeAddress: String
+    var workAddress: String
     val homeAssistantUrl: String
     val homeAssistantToken: String
 

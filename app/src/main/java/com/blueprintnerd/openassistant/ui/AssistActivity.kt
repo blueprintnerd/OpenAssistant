@@ -7,10 +7,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,6 +46,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -85,8 +90,8 @@ import com.blueprintnerd.openassistant.engine.CardType
 import com.blueprintnerd.openassistant.engine.CommandRouter
 import com.blueprintnerd.openassistant.speech.SttCallbacks
 import com.blueprintnerd.openassistant.ui.components.AssistantGlowingEdgeBar
-import com.blueprintnerd.openassistant.ui.components.AssistantListeningDots
 import com.blueprintnerd.openassistant.ui.theme.AssistantBlue
+import com.blueprintnerd.openassistant.ui.theme.AssistantGreen
 import com.blueprintnerd.openassistant.ui.theme.OpenAssistantTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -158,6 +163,7 @@ private fun GoogleAssistantOverlay(
         isListening = false
         isThinking = true
         showKeyboard = false
+        response = null
         scope.launch {
             val res = app.commandRouter.handle(clean)
             response = res
@@ -250,12 +256,13 @@ private fun GoogleAssistantOverlay(
             enter = slideInVertically(
                 initialOffsetY = { it / 2 },
                 animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-            ) + fadeIn(),
+            ) + fadeIn(tween(180)),
         ) {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
+                    .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
                     .clickable(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() },
@@ -266,24 +273,23 @@ private fun GoogleAssistantOverlay(
                 shadowElevation = 24.dp,
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    // Main Sheet Content
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 16.dp)
+                            .padding(top = 18.dp)
                             .verticalScroll(rememberScrollState()),
                     ) {
-                        // Header row with authentic product_logo_assistant_color_24
+                        // Top Header: official 24dp Assistant icon on left, subtle Tune icon on right
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 4.dp),
+                                .padding(horizontal = 24.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Image(
                                 painter = painterResource(id = R.drawable.product_logo_assistant_color_24),
-                                contentDescription = "Google Assistant Logo",
+                                contentDescription = "Assistant",
                                 modifier = Modifier.size(24.dp),
                             )
                             IconButton(onClick = onOpenSettings, modifier = Modifier.size(32.dp)) {
@@ -296,58 +302,74 @@ private fun GoogleAssistantOverlay(
                             }
                         }
 
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(10.dp))
 
-                        // Conversational Plate
+                        // Conversation Body
                         Column(modifier = Modifier.fillMaxWidth()) {
                             if (transcript.isBlank() && response == null) {
                                 Text(
                                     text = promptText,
-                                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp),
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        fontSize = 22.sp,
+                                        lineHeight = 28.sp,
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontWeight = FontWeight.Normal,
-                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
+                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
                                 )
                             }
 
+                            // Spoken/typed query: centered large text while listening, right-aligned bubble once sent
                             if (transcript.isNotBlank()) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(start = 40.dp, end = 24.dp, top = 4.dp, bottom = 6.dp),
-                                    horizontalArrangement = Arrangement.End,
-                                ) {
-                                    Box(
+                                if (isListening) {
+                                    Text(
+                                        text = transcript,
+                                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
+                                    )
+                                } else {
+                                    Row(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(20.dp))
-                                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                                            .fillMaxWidth()
+                                            .padding(start = 56.dp, end = 24.dp, top = 2.dp, bottom = 10.dp),
+                                        horizontalArrangement = Arrangement.End,
                                     ) {
-                                        Text(
-                                            text = transcript,
-                                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                        )
+                                        Surface(
+                                            shape = RoundedCornerShape(
+                                                topStart = 20.dp,
+                                                topEnd = 20.dp,
+                                                bottomStart = 20.dp,
+                                                bottomEnd = 6.dp,
+                                            ),
+                                            color = MaterialTheme.colorScheme.surfaceVariant,
+                                        ) {
+                                            Text(
+                                                text = transcript,
+                                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                            )
+                                        }
                                     }
                                 }
                             }
 
+                            // Assistant Response: clean text directly on sheet for simple replies, rich cards for structured data
                             response?.let { res ->
-                                Box(modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)) {
-                                    AssistantAnswerCard(
-                                        response = res,
-                                        onActionUrl = { url -> app.deviceActions.openUrl(url) },
-                                        onActionCommand = { cmd -> executeQuery(cmd) },
-                                    )
-                                }
+                                AssistantResponseContent(
+                                    response = res,
+                                    onActionUrl = { url -> app.deviceActions.openUrl(url) },
+                                    onActionCommand = { cmd -> executeQuery(cmd) { startListening() } },
+                                )
                             }
                         }
 
-                        // Horizontal Suggestion Rail
+                        // Suggestion Pills (only when idle)
                         val chips = response?.suggestions?.ifEmpty { null }
-                            ?: if (response == null && !isListening) CommandRouter.DEFAULT_SUGGESTIONS else emptyList()
-                        if (chips.isNotEmpty()) {
-                            Spacer(Modifier.height(8.dp))
+                            ?: if (response == null && !isListening && !isThinking) CommandRouter.DEFAULT_SUGGESTIONS else emptyList()
+                        if (chips.isNotEmpty() && !isThinking && !isListening) {
+                            Spacer(Modifier.height(12.dp))
                             LazyRow(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -355,157 +377,190 @@ private fun GoogleAssistantOverlay(
                             ) {
                                 items(chips) { chip ->
                                     AssistChip(
-                                        onClick = { executeQuery(chip) },
+                                        onClick = { executeQuery(chip) { startListening() } },
                                         label = {
                                             Text(
                                                 chip,
-                                                color = AssistantBlue,
+                                                color = MaterialTheme.colorScheme.onSurface,
                                                 fontWeight = FontWeight.Medium,
                                             )
                                         },
                                         shape = RoundedCornerShape(20.dp),
                                         colors = AssistChipDefaults.assistChipColors(
-                                            containerColor = MaterialTheme.colorScheme.surface,
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
                                         ),
-                                        border = AssistChipDefaults.assistChipBorder(
-                                            enabled = true,
-                                            borderColor = MaterialTheme.colorScheme.outlineVariant,
+                                        border = BorderStroke(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                                         ),
                                     )
                                 }
                             }
                         }
 
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(14.dp))
 
-                        // Match inputui_keyboard.xml vs inputui_layout.xml:
-                        // When keyboard is open, replace the mic plate cleanly with the flush 56dp type bar.
-                        if (showKeyboard) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp)
-                                    .padding(start = 24.dp, end = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(
-                                    modifier = Modifier.weight(1f),
-                                    contentAlignment = Alignment.CenterStart,
+                        // Bottom Input / Action Area:
+                        // - Keyboard open -> flush 56dp input bar
+                        // - Thinking -> hide mic & keyboard completely so ONLY the bottom 4-color bar animates
+                        // - Listening -> minimal subtle keyboard button + tap-to-stop area above the 4-color bar
+                        // - Idle -> clean Google-style floating mic circle + keyboard button
+                        when {
+                            showKeyboard -> {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(56.dp)
+                                        .padding(start = 24.dp, end = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    if (typedInput.isEmpty()) {
-                                        Text(
-                                            text = "Type a message",
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    Box(
+                                        modifier = Modifier.weight(1f),
+                                        contentAlignment = Alignment.CenterStart,
+                                    ) {
+                                        if (typedInput.isEmpty()) {
+                                            Text(
+                                                text = "Type a message",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        BasicTextField(
+                                            value = typedInput,
+                                            onValueChange = { typedInput = it },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .focusRequester(focusRequester),
+                                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            ),
+                                            cursorBrush = SolidColor(AssistantBlue),
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                            keyboardActions = KeyboardActions(
+                                                onSend = {
+                                                    val q = typedInput
+                                                    typedInput = ""
+                                                    executeQuery(q) { startListening() }
+                                                }
+                                            ),
                                         )
                                     }
-                                    BasicTextField(
-                                        value = typedInput,
-                                        onValueChange = { typedInput = it },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .focusRequester(focusRequester),
-                                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                        ),
-                                        cursorBrush = SolidColor(AssistantBlue),
-                                        singleLine = true,
-                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                                        keyboardActions = KeyboardActions(
-                                            onSend = {
+                                    IconButton(
+                                        onClick = {
+                                            if (typedInput.isBlank()) {
+                                                startListening()
+                                            } else {
                                                 val q = typedInput
                                                 typedInput = ""
-                                                executeQuery(q)
-                                            }
-                                        ),
-                                    )
-                                }
-                                IconButton(
-                                    onClick = {
-                                        if (typedInput.isBlank()) {
-                                            startListening()
-                                        } else {
-                                            val q = typedInput
-                                            typedInput = ""
-                                            executeQuery(q)
-                                        }
-                                    },
-                                    modifier = Modifier.size(48.dp),
-                                ) {
-                                    Image(
-                                        painter = painterResource(
-                                            id = if (typedInput.isBlank()) {
-                                                R.drawable.ic_mic_color
-                                            } else {
-                                                R.drawable.quantum_ic_send_googblue_24
-                                            }
-                                        ),
-                                        contentDescription = if (typedInput.isBlank()) "Speak" else "Send",
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-                            }
-                        } else {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(56.dp)
-                                    .padding(horizontal = 24.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        app.sttEngine.requestStop()
-                                        isListening = false
-                                        showKeyboard = true
-                                    },
-                                    modifier = Modifier.size(48.dp),
-                                ) {
-                                    Image(
-                                        painter = painterResource(id = R.drawable.quantum_ic_keyboard_grey600_24),
-                                        contentDescription = "Keyboard",
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .size(56.dp)
-                                        .shadow(elevation = 3.dp, shape = CircleShape)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        .clickable {
-                                            if (isListening) {
-                                                app.sttEngine.requestStop()
-                                            } else {
-                                                startListening()
+                                                executeQuery(q) { startListening() }
                                             }
                                         },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    if (isListening) {
-                                        AssistantListeningDots(
-                                            amplitude = amplitude,
-                                            isListening = true,
-                                            isThinking = false,
-                                        )
-                                    } else {
+                                        modifier = Modifier.size(48.dp),
+                                    ) {
                                         Image(
-                                            painter = painterResource(id = R.drawable.ic_mic_color),
-                                            contentDescription = "Microphone",
-                                            modifier = Modifier.size(28.dp),
+                                            painter = painterResource(
+                                                id = if (typedInput.isBlank()) {
+                                                    R.drawable.ic_mic_color
+                                                } else {
+                                                    R.drawable.quantum_ic_send_googblue_24
+                                                }
+                                            ),
+                                            contentDescription = if (typedInput.isBlank()) "Speak" else "Send",
+                                            modifier = Modifier.size(24.dp),
                                         )
                                     }
                                 }
+                            }
+                            isThinking -> {
+                                // Clean breathing room above the single animated 4-color bar (no duplicate voice button!)
+                                Spacer(Modifier.height(12.dp))
+                            }
+                            isListening -> {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .padding(horizontal = 20.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    IconButton(
+                                        onClick = {
+                                            app.sttEngine.requestStop()
+                                            isListening = false
+                                            showKeyboard = true
+                                        },
+                                        modifier = Modifier.size(44.dp),
+                                    ) {
+                                        Image(
+                                            painter = painterResource(id = R.drawable.quantum_ic_keyboard_grey600_24),
+                                            contentDescription = "Keyboard",
+                                            modifier = Modifier.size(22.dp),
+                                        )
+                                    }
+                                    Text(
+                                        text = "Listening...",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .clickable { app.sttEngine.requestStop() }
+                                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    )
+                                    Spacer(Modifier.size(44.dp))
+                                }
+                                Spacer(Modifier.height(4.dp))
+                            }
+                            else -> {
+                                AnimatedVisibility(
+                                    visible = !isThinking && !isListening,
+                                    enter = fadeIn(tween(180)),
+                                    exit = fadeOut(tween(120)),
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        IconButton(
+                                            onClick = { showKeyboard = true },
+                                            modifier = Modifier.size(48.dp),
+                                        ) {
+                                            Image(
+                                                painter = painterResource(id = R.drawable.quantum_ic_keyboard_grey600_24),
+                                                contentDescription = "Keyboard",
+                                                modifier = Modifier.size(24.dp),
+                                            )
+                                        }
 
-                                Box(modifier = Modifier.size(48.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .size(54.dp)
+                                                .shadow(elevation = 4.dp, shape = CircleShape)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                .clickable { startListening() },
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Image(
+                                                painter = painterResource(id = R.drawable.ic_mic_color),
+                                                contentDescription = "Speak",
+                                                modifier = Modifier.size(26.dp),
+                                            )
+                                        }
+
+                                        Spacer(Modifier.size(48.dp))
+                                    }
+                                }
                             }
                         }
                     }
 
-                    // 4-color bar: ONLY shown when actively listening/talking
+                    // Crisp 4-color bar: ONLY visible while listening or thinking
                     AssistantGlowingEdgeBar(
                         amplitude = amplitude,
                         isListening = isListening,
@@ -518,129 +573,195 @@ private fun GoogleAssistantOverlay(
 }
 
 @Composable
-private fun AssistantAnswerCard(
+private fun AssistantResponseContent(
     response: AssistantResponse,
     onActionUrl: (String) -> Unit,
     onActionCommand: (String) -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = RoundedCornerShape(20.dp),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            if (response.cardType == CardType.WEATHER && response.weather != null) {
-                val w = response.weather
-                Text(
-                    text = w.location,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    when {
+        // Simple conversational replies & follow-up questions: clean text directly on sheet (like real Google Assistant)
+        response.cardType == CardType.TEXT && response.actions.isEmpty() -> {
+            Text(
+                text = response.body,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 18.sp,
+                    lineHeight = 25.sp,
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Normal,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            )
+        }
+
+        // Action confirmations (Timer, Alarm, Flashlight, Music, Navigation): crisp inline confirmation row
+        response.cardType == CardType.ACTION_CONFIRMATION && response.actions.isEmpty() -> {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = AssistantGreen,
+                    modifier = Modifier.size(22.dp),
                 )
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = w.temperature,
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        text = w.condition,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = w.details,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (w.forecast.isNotEmpty()) {
-                    Spacer(Modifier.height(12.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        w.forecast.forEach { day ->
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    day.dayLabel,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(
-                                    "${day.high} / ${day.low}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Medium,
-                                    textAlign = TextAlign.Center,
-                                )
-                            }
-                        }
-                    }
-                }
-            } else if (response.cardType == CardType.LIST && response.listItems.isNotEmpty()) {
-                Text(
-                    text = response.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(6.dp))
-                response.listItems.forEach { item ->
-                    Text(
-                        text = "- $item",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(vertical = 2.dp),
-                    )
-                }
-            } else {
-                if (response.cardType == CardType.WIKIPEDIA || response.cardType == CardType.CALCULATOR) {
-                    Text(
-                        text = response.title,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                }
+                Spacer(Modifier.width(10.dp))
                 Text(
                     text = response.body,
-                    style = if (response.cardType == CardType.CALCULATOR) {
-                        MaterialTheme.typography.headlineSmall
-                    } else {
-                        MaterialTheme.typography.bodyLarge
-                    },
-                    fontWeight = if (response.cardType == CardType.CALCULATOR) FontWeight.SemiBold else FontWeight.Normal,
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
+        }
 
-            if (response.actions.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    response.actions.forEachIndexed { idx, action ->
-                        if (idx == 0) {
-                            Button(
-                                onClick = {
-                                    action.url?.let(onActionUrl)
-                                    action.command?.let(onActionCommand)
-                                },
-                                shape = RoundedCornerShape(20.dp),
+        // Rich structured cards (Weather, Calculator, Wikipedia/Dictionary, List, or actions)
+        else -> {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                shape = RoundedCornerShape(22.dp),
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    if (response.cardType == CardType.WEATHER && response.weather != null) {
+                        val w = response.weather
+                        Text(
+                            text = w.location,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                text = w.temperature,
+                                style = MaterialTheme.typography.displayMedium.copy(fontSize = 44.sp),
+                                fontWeight = FontWeight.Normal,
+                            )
+                            Text(
+                                text = w.condition,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 6.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = w.details,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (w.forecast.isNotEmpty()) {
+                            Spacer(Modifier.height(14.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            Spacer(Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                Text(action.label)
+                                w.forecast.forEach { day ->
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            day.dayLabel,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            "${day.high} / ${day.low}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium,
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
+                                }
                             }
+                        }
+                    } else if (response.cardType == CardType.CALCULATOR) {
+                        val parts = response.body.split(" = ", limit = 2)
+                        if (parts.size == 2) {
+                            Text(
+                                text = parts[0],
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = parts[1],
+                                style = MaterialTheme.typography.displaySmall.copy(fontSize = 34.sp),
+                                fontWeight = FontWeight.Medium,
+                            )
                         } else {
-                            OutlinedButton(
-                                onClick = {
-                                    action.url?.let(onActionUrl)
-                                    action.command?.let(onActionCommand)
-                                },
-                                shape = RoundedCornerShape(20.dp),
-                            ) {
-                                Text(action.label)
+                            Text(
+                                text = response.body,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                    } else if (response.cardType == CardType.LIST && response.listItems.isNotEmpty()) {
+                        Text(
+                            text = response.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AssistantBlue,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        response.listItems.forEach { item ->
+                            Text(
+                                text = "•  $item",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(vertical = 3.dp),
+                            )
+                        }
+                    } else {
+                        if (response.cardType == CardType.WIKIPEDIA) {
+                            Text(
+                                text = response.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = AssistantBlue,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        Text(
+                            text = response.body,
+                            style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 23.sp),
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+
+                    if (response.actions.isNotEmpty()) {
+                        Spacer(Modifier.height(14.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            response.actions.forEachIndexed { idx, action ->
+                                if (idx == 0) {
+                                    Button(
+                                        onClick = {
+                                            action.url?.let(onActionUrl)
+                                            action.command?.let(onActionCommand)
+                                        },
+                                        shape = RoundedCornerShape(20.dp),
+                                    ) {
+                                        Text(action.label)
+                                    }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = {
+                                            action.url?.let(onActionUrl)
+                                            action.command?.let(onActionCommand)
+                                        },
+                                        shape = RoundedCornerShape(20.dp),
+                                    ) {
+                                        Text(action.label)
+                                    }
+                                }
                             }
                         }
                     }

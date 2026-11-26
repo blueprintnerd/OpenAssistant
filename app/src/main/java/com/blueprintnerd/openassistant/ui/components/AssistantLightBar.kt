@@ -12,8 +12,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -21,10 +19,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.blueprintnerd.openassistant.ui.theme.AssistantBlue
@@ -35,7 +33,8 @@ import kotlin.math.PI
 import kotlin.math.sin
 
 /**
- * Crisp 4-color Google Assistant bottom bar that ONLY appears when listening/talking.
+ * Crisp 4-color Google Assistant bottom bar that ONLY appears when actively
+ * listening or thinking, with smooth undulating segment widths and zero muddy blur.
  */
 @Composable
 fun AssistantGlowingEdgeBar(
@@ -45,23 +44,23 @@ fun AssistantGlowingEdgeBar(
     modifier: Modifier = Modifier,
 ) {
     val active = isListening || isThinking
-    val transition = rememberInfiniteTransition(label = "assistant_glow_bar")
+    val transition = rememberInfiniteTransition(label = "assistant_edge_bar")
     val phase by transition.animateFloat(
         initialValue = 0f,
         targetValue = (2 * PI).toFloat(),
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            animation = tween(durationMillis = if (isThinking) 900 else 1300, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
-        label = "glow_phase",
+        label = "edge_phase",
     )
 
     val colors = listOf(AssistantBlue, AssistantRed, AssistantYellow, AssistantGreen)
 
     AnimatedVisibility(
         visible = active,
-        enter = fadeIn(tween(150)) + expandVertically(expandFrom = Alignment.Bottom),
-        exit = fadeOut(tween(150)) + shrinkVertically(shrinkTowards = Alignment.Bottom),
+        enter = fadeIn(tween(140)) + expandVertically(expandFrom = Alignment.Bottom),
+        exit = fadeOut(tween(140)) + shrinkVertically(shrinkTowards = Alignment.Bottom),
         modifier = modifier,
     ) {
         Canvas(
@@ -71,12 +70,16 @@ fun AssistantGlowingEdgeBar(
         ) {
             val w = size.width
             val h = size.height
-            val energy = if (isListening) (0.5f + amplitude * 0.5f).coerceIn(0.5f, 1f) else 0.7f
-            val barH = (3.dp.toPx() + 3.dp.toPx() * energy).coerceAtMost(h)
+            val energy = when {
+                isListening -> (0.55f + amplitude * 0.45f).coerceIn(0.55f, 1f)
+                isThinking -> 0.85f
+                else -> 0.5f
+            }
+            val barH = (3.5.dp.toPx() + 2.5.dp.toPx() * energy).coerceAtMost(h)
             val top = h - barH
 
             val weights = FloatArray(4) { i ->
-                1f + 0.30f * sin(phase + i * 1.4f) * energy
+                1f + 0.35f * sin(phase + i * 1.45f) * energy
             }
             val weightSum = weights.sum()
             var x = 0f
@@ -89,66 +92,19 @@ fun AssistantGlowingEdgeBar(
                 )
                 x += segW
             }
+
+            // Subtle crisp top sheen for a luminous glass-bar feel without upward blur
+            drawRect(
+                color = Color.White.copy(alpha = 0.22f * energy),
+                topLeft = Offset(0f, top),
+                size = Size(w, 1.dp.toPx()),
+            )
         }
     }
 }
 
 /**
- * Animated 4-dot / 4-bar equalizer inside the mic plate when active.
- */
-@Composable
-fun AssistantListeningDots(
-    amplitude: Float,
-    isListening: Boolean,
-    isThinking: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val transition = rememberInfiniteTransition(label = "assistant_dots")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2 * PI).toFloat(),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 850, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "dots_phase",
-    )
-
-    val colors = listOf(AssistantBlue, AssistantRed, AssistantYellow, AssistantGreen)
-
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        colors.forEachIndexed { idx, color ->
-            Canvas(modifier = Modifier.size(width = 6.dp, height = 24.dp)) {
-                val wave = sin(phase + idx * 0.9f)
-                val barHeight = when {
-                    isListening -> {
-                        val dynamic = (0.35f + amplitude * 0.65f) * (0.65f + 0.35f * wave)
-                        (size.height * dynamic).coerceIn(6f, size.height)
-                    }
-                    isThinking -> {
-                        val pulse = 0.4f + 0.3f * wave
-                        (size.height * pulse).coerceIn(6f, size.height)
-                    }
-                    else -> 6f
-                }
-                val top = (size.height - barHeight) / 2f
-                drawRoundRect(
-                    color = color,
-                    topLeft = Offset((size.width - 5f) / 2f, top),
-                    size = Size(5f, barHeight),
-                    cornerRadius = CornerRadius(2.5f, 2.5f),
-                )
-            }
-        }
-    }
-}
-
-/**
- * Perfect circle with the 4-color Google gradient.
+ * Perfect circle with the 4-color Google gradient (matches the app icon).
  */
 @Composable
 fun GoogleGradientCircleIcon(

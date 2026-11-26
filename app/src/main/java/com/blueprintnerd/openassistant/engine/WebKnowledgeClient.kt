@@ -24,6 +24,8 @@ data class DictionaryResult(
     val phonetic: String,
     val partOfSpeech: String,
     val definition: String,
+    val example: String = "",
+    val synonyms: List<String> = emptyList(),
 )
 
 data class InstantAnswer(
@@ -169,14 +171,37 @@ class WebKnowledgeClient(
             val meaning = meanings.getJSONObject(0)
             val defs = meaning.optJSONArray("definitions") ?: return@withContext null
             if (defs.length() == 0) return@withContext null
+            val firstDef = defs.getJSONObject(0)
+            val synArray = meaning.optJSONArray("synonyms")
+            val synonyms = buildList {
+                if (synArray != null) {
+                    for (i in 0 until minOf(synArray.length(), 4)) {
+                        add(synArray.getString(i))
+                    }
+                }
+            }
             DictionaryResult(
                 word = entry.optString("word", word),
                 phonetic = entry.optString("phonetic", ""),
                 partOfSpeech = meaning.optString("partOfSpeech", ""),
-                definition = defs.getJSONObject(0).optString("definition", ""),
+                definition = firstDef.optString("definition", ""),
+                example = firstDef.optString("example", ""),
+                synonyms = synonyms,
             )
         }.getOrNull()
     }
+
+    suspend fun fetchCurrencyConversion(amount: Double, from: String, to: String): String? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val url = "https://api.frankfurter.app/latest?amount=$amount&from=$from&to=$to"
+                val json = getJson(url) ?: return@withContext null
+                val rates = json.optJSONObject("rates") ?: return@withContext null
+                if (!rates.has(to)) return@withContext null
+                val converted = rates.getDouble(to)
+                "${MathEvaluator.formatNumber(amount)} $from = ${String.format(Locale.US, "%.2f", converted)} $to"
+            }.getOrNull()
+        }
 
     suspend fun fetchDuckDuckGoInstantAnswer(query: String): InstantAnswer? = withContext(Dispatchers.IO) {
         runCatching {

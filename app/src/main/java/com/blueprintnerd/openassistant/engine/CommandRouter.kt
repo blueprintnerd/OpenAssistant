@@ -241,14 +241,23 @@ class CommandRouter(
             }
 
         // 13. Navigation & Maps
-        Regex("""^(?:navigate to|directions to|take me to|drive to|route to|find)\s+(.+)$""", RegexOption.IGNORE_CASE)
-            .matchEntire(input)?.let { m ->
-                val dest = m.groupValues[1].trim()
-                if (!lower.startsWith("find out")) {
-                    val msg = device.navigateTo(dest)
-                    return AssistantResponse("Navigation", msg, cardType = CardType.ACTION_CONFIRMATION)
-                }
+        Regex(
+            """^(?:navigate to|directions to|take me to|drive to|walk to|bike to|cycle to|route to|how do i get to|how to get to|show me|find)\s+(.+?)(?:\s+on the map)?$""",
+            RegexOption.IGNORE_CASE,
+        ).matchEntire(input)?.let { m ->
+            val dest = m.groupValues[1].trim()
+            if (!lower.startsWith("find out") && dest.isNotEmpty()) {
+                val msg = device.navigateTo(dest)
+                return AssistantResponse("Navigation", msg, cardType = CardType.ACTION_CONFIRMATION, dismissAfterMs = 1500)
             }
+        }
+        Regex("""^(.+?)\s+near me$""", RegexOption.IGNORE_CASE).matchEntire(input)?.let { m ->
+            val place = m.groupValues[1].trim()
+            if (place.isNotEmpty()) {
+                val msg = device.navigateTo(place)
+                return AssistantResponse("Navigation", msg, cardType = CardType.ACTION_CONFIRMATION, dismissAfterMs = 1500)
+            }
+        }
 
         // 14. Camera / Selfie
         if (lower in setOf("take a selfie", "open front camera", "selfie")) {
@@ -328,13 +337,23 @@ class CommandRouter(
             return AssistantResponse("Date", "Today is $dateStr.")
         }
 
-        // 19. Unit Conversions
+        // 19. Unit & Currency Conversions
         UnitConverter.tryConvert(input)?.let { converted ->
             return AssistantResponse(
                 title = "Unit Converter",
                 body = converted,
                 cardType = CardType.CALCULATOR,
             )
+        }
+        UnitConverter.tryParseCurrencyQuery(input)?.let { (amount, from, to) ->
+            val converted = web.fetchCurrencyConversion(amount, from, to)
+            if (converted != null) {
+                return AssistantResponse(
+                    title = "Currency Converter",
+                    body = converted,
+                    cardType = CardType.CALCULATOR,
+                )
+            }
         }
 
         // 20. Math & Calculator
@@ -387,21 +406,42 @@ class CommandRouter(
             }
         }
 
-        // 23. Dictionary Definitions
-        Regex("""^(?:define|definition of|what does\s+)(.+?)(?:\s+mean)?$""").matchEntire(lower)?.let { m ->
+        // 23. Dictionary Definitions & Synonyms
+        Regex("""^(?:define|(?:what(?:'s| is)\s+the\s+)?(?:definition|meaning)\s+of|what does\s+)(.+?)(?:\s+mean)?$""")
+            .matchEntire(lower)?.let { m ->
+                val word = m.groupValues[1].trim()
+                if (word.isNotEmpty() && !word.contains(" ")) {
+                    val def = web.fetchDefinition(word)
+                    if (def != null) {
+                        val header = buildString {
+                            append(def.word)
+                            if (def.phonetic.isNotBlank()) append(" (${def.phonetic})")
+                            if (def.partOfSpeech.isNotBlank()) append(" - ${def.partOfSpeech}")
+                        }
+                        val fullBody = buildString {
+                            append(def.definition)
+                            if (def.example.isNotBlank()) append("\n\n\"${def.example}\"")
+                            if (def.synonyms.isNotEmpty()) append("\nSynonyms: ${def.synonyms.joinToString(", ")}")
+                        }
+                        return AssistantResponse(
+                            title = header,
+                            body = fullBody,
+                            spokenText = "${def.word}: ${def.definition}",
+                            cardType = CardType.WIKIPEDIA,
+                        )
+                    }
+                }
+            }
+        Regex("""^(?:synonyms?|another word)\s+(?:for|of)\s+(.+)$""").matchEntire(lower)?.let { m ->
             val word = m.groupValues[1].trim()
             if (word.isNotEmpty() && !word.contains(" ")) {
                 val def = web.fetchDefinition(word)
-                if (def != null) {
-                    val header = buildString {
-                        append(def.word)
-                        if (def.phonetic.isNotBlank()) append(" (${def.phonetic})")
-                        if (def.partOfSpeech.isNotBlank()) append(" - ${def.partOfSpeech}")
-                    }
+                if (def != null && def.synonyms.isNotEmpty()) {
+                    val list = def.synonyms.joinToString(", ")
                     return AssistantResponse(
-                        title = header,
-                        body = def.definition,
-                        spokenText = "${def.word}: ${def.definition}",
+                        title = "Synonyms for ${def.word}",
+                        body = list,
+                        spokenText = "Synonyms for ${def.word} include $list.",
                         cardType = CardType.WIKIPEDIA,
                     )
                 }

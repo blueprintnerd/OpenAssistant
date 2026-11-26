@@ -478,11 +478,11 @@ private fun GoogleAssistantOverlay(
                                         },
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    if (isListening || isThinking) {
+                                    if (isListening) {
                                         AssistantListeningDots(
                                             amplitude = amplitude,
-                                            isListening = isListening,
-                                            isThinking = isThinking,
+                                            isListening = true,
+                                            isThinking = false,
                                         )
                                     } else {
                                         Image(

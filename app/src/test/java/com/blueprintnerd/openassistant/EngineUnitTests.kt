@@ -86,9 +86,13 @@ class EngineUnitTests {
     @Test
     fun unitConverterHandlesCommonConversions() {
         assertEquals("100 celsius = 212 fahrenheit", UnitConverter.tryConvert("100 celsius to fahrenheit"))
+        assertEquals("100 fahrenheit = 37.777778 celsius", UnitConverter.tryConvert("100 °F to °C"))
         assertEquals("5 miles = 8.04672 kilometers", UnitConverter.tryConvert("convert 5 miles to km"))
         assertEquals("10 kilograms = 22.046226 pounds", UnitConverter.tryConvert("10 kg in lbs"))
         assertEquals("2 gigabytes = 2,048 megabytes", UnitConverter.tryConvert("2 gb to mb"))
+        assertEquals("3 hours = 180 minutes", UnitConverter.tryConvert("how many minutes in 3 hours"))
+        assertEquals("1,000 square feet = 92.903 square meters", UnitConverter.tryConvert("1000 sqft to sqm"))
+        assertEquals(Triple(100.0, "USD", "EUR"), UnitConverter.tryParseCurrencyQuery("100 dollars to euros"))
     }
 
     @Test
@@ -155,5 +159,11 @@ class EngineUnitTests {
 
         val ytmResp = router.handle("play lo-fi beats on yt music")
         assertEquals("Play:lo-fi beats:YT_MUSIC", ytmResp.body)
+
+        val navResp = router.handle("how do i get to Central Park")
+        assertEquals("Nav:Central Park", navResp.body)
+
+        val nearMeResp = router.handle("coffee shops near me")
+        assertEquals("Nav:coffee shops", nearMeResp.body)
     }
 }

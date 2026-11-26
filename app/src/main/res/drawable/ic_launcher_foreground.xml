@@ -1,22 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#111318"
-        android:pathData="M0,0h108v108h-108z" />
-    <path
-        android:fillColor="#4285F4"
-        android:pathData="M41,44m-13,0a13,13 0,1 1,26 0a13,13 0,1 1,-26 0" />
-    <path
-        android:fillColor="#EA4335"
-        android:pathData="M67,38m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0" />
-    <path
-        android:fillColor="#FBBC05"
-        android:pathData="M67,60m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0" />
-    <path
-        android:fillColor="#34A853"
-        android:pathData="M82,47m-4.5,0a4.5,4.5 0,1 1,9 0a4.5,4.5 0,1 1,-9 0" />
+    <!-- Perfect circle filled with the 4-color Google gradient -->
+    <path android:pathData="M54,22 A32,32 0 1,1 53.99,22 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="22"
+                android:startY="22"
+                android:endX="86"
+                android:endY="86"
+                android:type="linear">
+                <item android:color="#4285F4" android:offset="0.0" />
+                <item android:color="#EA4335" android:offset="0.36" />
+                <item android:color="#FBBC05" android:offset="0.68" />
+                <item android:color="#34A853" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
 </vector>

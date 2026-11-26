@@ -6,6 +6,11 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -33,9 +38,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -73,7 +77,7 @@ import com.blueprintnerd.openassistant.engine.CommandRouter
 import com.blueprintnerd.openassistant.speech.SttCallbacks
 import com.blueprintnerd.openassistant.ui.components.AssistantFourDotsMark
 import com.blueprintnerd.openassistant.ui.components.AssistantGlowingEdgeBar
-import com.blueprintnerd.openassistant.ui.components.AssistantListeningDots
+import com.blueprintnerd.openassistant.ui.components.GoogleFourColorMicIcon
 import com.blueprintnerd.openassistant.ui.theme.AssistantBlue
 import com.blueprintnerd.openassistant.ui.theme.OpenAssistantTheme
 import kotlinx.coroutines.delay
@@ -126,6 +130,7 @@ private fun GoogleAssistantOverlay(
     onDismiss: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    var visible by remember { mutableStateOf(false) }
     var isListening by remember { mutableStateOf(false) }
     var isThinking by remember { mutableStateOf(false) }
     var showKeyboard by remember { mutableStateOf(false) }
@@ -198,7 +203,8 @@ private fun GoogleAssistantOverlay(
         }
     }
 
-    LaunchedEffect(autoListen) {
+    LaunchedEffect(Unit) {
+        visible = true
         if (autoListen) {
             app.ttsEngine.playActivationChime()
             startListening()
@@ -215,190 +221,212 @@ private fun GoogleAssistantOverlay(
             ),
         contentAlignment = Alignment.BottomCenter,
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .imePadding()
-                .navigationBarsPadding()
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() },
-                    onClick = {},
-                ),
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 20.dp,
+        AnimatedVisibility(
+            visible = visible,
+            enter = slideInVertically(
+                initialOffsetY = { it / 2 },
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+            ) + fadeIn(),
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Main sheet content
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 22.dp, end = 22.dp, top = 20.dp, bottom = 8.dp)
-                        .verticalScroll(rememberScrollState()),
-                ) {
-                    // Top Assistant 4-dots mark + greeting or transcript
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .imePadding()
+                    .navigationBarsPadding()
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                        onClick = {},
+                    ),
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 24.dp,
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Subtle Material You drag pill
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        AssistantFourDotsMark(size = 26.dp)
-                        Spacer(Modifier.width(12.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(width = 36.dp, height = 4.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.28f))
+                        )
+                    }
+
+                    // Main compact Google Assistant sheet body
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp)
+                            .verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        // Top-left 4-dot emblem (exact NGA placement)
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            AssistantFourDotsMark(
+                                size = 24.dp,
+                                modifier = Modifier.align(Alignment.CenterStart),
+                            )
+                        }
+
+                        Spacer(Modifier.height(6.dp))
+
+                        // Centered greeting or live spoken words
                         if (transcript.isNotBlank()) {
                             Text(
                                 text = transcript,
-                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 19.sp),
+                                style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
                                 color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Normal,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         } else if (response == null) {
                             Text(
                                 text = promptText,
-                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 19.sp),
+                                style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Normal,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
-                    }
 
-                    // Rich Answer Card (when available)
-                    response?.let { res ->
-                        Spacer(Modifier.height(14.dp))
-                        AssistantAnswerCard(
-                            response = res,
-                            onActionUrl = { url -> app.deviceActions.openUrl(url) },
-                            onActionCommand = { cmd -> executeQuery(cmd) },
-                        )
-                    }
+                        // Rich Answer Card
+                        response?.let { res ->
+                            Spacer(Modifier.height(14.dp))
+                            AssistantAnswerCard(
+                                response = res,
+                                onActionUrl = { url -> app.deviceActions.openUrl(url) },
+                                onActionCommand = { cmd -> executeQuery(cmd) },
+                            )
+                        }
 
-                    // Horizontal suggestion pills (just like Google Assistant)
-                    val chips = response?.suggestions?.ifEmpty { null }
-                        ?: if (response == null && !isListening) CommandRouter.DEFAULT_SUGGESTIONS else emptyList()
-                    if (chips.isNotEmpty()) {
-                        Spacer(Modifier.height(14.dp))
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(end = 8.dp),
-                        ) {
-                            items(chips) { chip ->
-                                AssistChip(
-                                    onClick = { executeQuery(chip) },
-                                    label = { Text(chip) },
-                                    shape = RoundedCornerShape(20.dp),
-                                    colors = AssistChipDefaults.assistChipColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                    ),
-                                    border = null,
-                                )
+                        // Horizontal suggestion pills
+                        val chips = response?.suggestions?.ifEmpty { null }
+                            ?: if (response == null && !isListening) CommandRouter.DEFAULT_SUGGESTIONS else emptyList()
+                        if (chips.isNotEmpty()) {
+                            Spacer(Modifier.height(14.dp))
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                contentPadding = PaddingValues(end = 8.dp),
+                            ) {
+                                items(chips) { chip ->
+                                    AssistChip(
+                                        onClick = { executeQuery(chip) },
+                                        label = { Text(chip) },
+                                        shape = RoundedCornerShape(20.dp),
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                        ),
+                                        border = null,
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    // Optional keyboard input field
-                    if (showKeyboard) {
-                        Spacer(Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            OutlinedTextField(
-                                value = typedInput,
-                                onValueChange = { typedInput = it },
-                                modifier = Modifier.weight(1f),
-                                placeholder = { Text("Ask anything...") },
-                                shape = RoundedCornerShape(24.dp),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                                keyboardActions = KeyboardActions(
-                                    onSend = {
+                        // Optional keyboard bar
+                        if (showKeyboard) {
+                            Spacer(Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                OutlinedTextField(
+                                    value = typedInput,
+                                    onValueChange = { typedInput = it },
+                                    modifier = Modifier.weight(1f),
+                                    placeholder = { Text("Ask anything...") },
+                                    shape = RoundedCornerShape(24.dp),
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                    keyboardActions = KeyboardActions(
+                                        onSend = {
+                                            val q = typedInput
+                                            typedInput = ""
+                                            executeQuery(q)
+                                        }
+                                    ),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                IconButton(
+                                    onClick = {
                                         val q = typedInput
                                         typedInput = ""
                                         executeQuery(q)
-                                    }
-                                ),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            IconButton(
-                                onClick = {
-                                    val q = typedInput
-                                    typedInput = ""
-                                    executeQuery(q)
-                                },
-                            ) {
+                                    },
+                                ) {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = "Send",
+                                        tint = AssistantBlue,
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        // Bottom action bar: Keyboard (left) | 4-color Mic when idle (center) | Settings (right)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            IconButton(onClick = { showKeyboard = !showKeyboard }) {
                                 Icon(
-                                    Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Send",
-                                    tint = AssistantBlue,
+                                    imageVector = Icons.Outlined.Keyboard,
+                                    contentDescription = "Keyboard",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+
+                            if (!isListening && !isThinking) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable { startListening() },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    GoogleFourColorMicIcon(size = 24.dp)
+                                }
+                            } else {
+                                // Tap anywhere in the center to finish speaking early
+                                Box(
+                                    modifier = Modifier
+                                        .size(width = 80.dp, height = 40.dp)
+                                        .clickable(
+                                            indication = null,
+                                            interactionSource = remember { MutableInteractionSource() },
+                                        ) {
+                                            if (isListening) app.sttEngine.requestStop()
+                                        }
+                                )
+                            }
+
+                            IconButton(onClick = onOpenSettings) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Tune,
+                                    contentDescription = "Settings",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
                     }
 
-                    Spacer(Modifier.height(14.dp))
-
-                    // Classic Google Assistant bottom controls: Keyboard | Mic or 4-Dots | Settings
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        IconButton(onClick = { showKeyboard = !showKeyboard }) {
-                            Icon(
-                                imageVector = Icons.Default.Keyboard,
-                                contentDescription = "Type",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        if (isListening || isThinking) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(24.dp))
-                                    .clickable {
-                                        if (isListening) app.sttEngine.requestStop()
-                                    }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                            ) {
-                                AssistantListeningDots(
-                                    amplitude = amplitude,
-                                    isListening = isListening,
-                                    isThinking = isThinking,
-                                )
-                            }
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .clickable { startListening() },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Mic,
-                                    contentDescription = "Speak",
-                                    tint = AssistantBlue,
-                                    modifier = Modifier.size(24.dp),
-                                )
-                            }
-                        }
-
-                        IconButton(onClick = onOpenSettings) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = "Settings",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    // Flush edge-to-edge feathered 4-color Google Assistant glowing light bar
+                    AssistantGlowingEdgeBar(
+                        amplitude = amplitude,
+                        isListening = isListening,
+                        isThinking = isThinking,
+                    )
                 }
-
-                // 1:1 Edge-to-edge glowing 4-color Google Assistant bottom bar
-                AssistantGlowingEdgeBar(
-                    amplitude = amplitude,
-                    isListening = isListening,
-                    isThinking = isThinking,
-                )
             }
         }
     }

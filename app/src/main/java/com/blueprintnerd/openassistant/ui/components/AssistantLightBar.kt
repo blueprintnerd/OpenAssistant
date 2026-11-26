@@ -7,7 +7,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -15,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -33,8 +36,9 @@ import kotlin.math.sin
 
 /**
  * Google Assistant NGA-style feathered 4-color glowing bottom edge bar.
- * Smooth overlapping radial blooms + continuous luminous gradient core line
- * with zero hard vertical seams between colors.
+ * Matches AssistantP6GlowView specs from inputui_layout.xml:
+ * - 15dp to 30dp upward gradient glow
+ * - 2dp light line core with smooth continuous 4-color blending
  */
 @Composable
 fun AssistantGlowingEdgeBar(
@@ -59,20 +63,20 @@ fun AssistantGlowingEdgeBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(32.dp),
+            .height(30.dp),
         contentAlignment = Alignment.BottomCenter,
     ) {
-        Canvas(modifier = Modifier.fillMaxWidth().height(32.dp)) {
+        Canvas(modifier = Modifier.fillMaxWidth().height(30.dp)) {
             val w = size.width
             val h = size.height
             val active = isListening || isThinking
             val energy = when {
                 isListening -> (0.45f + amplitude * 0.55f).coerceIn(0.45f, 1f)
                 isThinking -> 0.72f
-                else -> 0.30f
+                else -> 0.28f
             }
 
-            // 1. Wide feathered upward radial blooms for each of the 4 Google colors
+            // Feathered upward blooms for the 4 colors
             val centers = listOf(0.14f, 0.38f, 0.62f, 0.86f)
             colors.forEachIndexed { i, color ->
                 val drift = if (active) sin(phase + i * 1.25f) * 0.06f else 0f
@@ -82,7 +86,7 @@ fun AssistantGlowingEdgeBar(
                     brush = Brush.radialGradient(
                         colors = listOf(
                             color.copy(alpha = 0.55f * energy),
-                            color.copy(alpha = 0.22f * energy),
+                            color.copy(alpha = 0.20f * energy),
                             Color.Transparent,
                         ),
                         center = Offset(cx, h),
@@ -93,7 +97,7 @@ fun AssistantGlowingEdgeBar(
                 )
             }
 
-            // 2. Smooth continuous gradient core strip along the bottom edge
+            // Smooth continuous 4-color core along bottom edge
             val stripH = if (active) (4.5.dp.toPx() + 3.5.dp.toPx() * energy) else 4.dp.toPx()
             val shiftPx = if (active) sin(phase) * w * 0.06f else 0f
             val coreBrush = Brush.horizontalGradient(
@@ -109,7 +113,6 @@ fun AssistantGlowingEdgeBar(
                 endX = w + shiftPx,
             )
 
-            // Subtle arched curve peaking in center when voice is active
             val archHeight = if (active) stripH * (1f + 0.55f * amplitude) else stripH
             val path = Path().apply {
                 moveTo(0f, h)
@@ -124,7 +127,6 @@ fun AssistantGlowingEdgeBar(
             }
             drawPath(path = path, brush = coreBrush)
 
-            // 3. Soft white-hot highlight filament at the very bottom when speaking
             if (active) {
                 drawLine(
                     brush = Brush.horizontalGradient(
@@ -146,65 +148,61 @@ fun AssistantGlowingEdgeBar(
 }
 
 /**
- * Classic 4-color Google Microphone vector mark (Blue top, Green stem, Yellow/Red cradle).
+ * Animated 4-dot / 4-bar equalizer inside the mic plate when active.
  */
 @Composable
-fun GoogleFourColorMicIcon(
-    size: Dp = 26.dp,
+fun AssistantListeningDots(
+    amplitude: Float,
+    isListening: Boolean,
+    isThinking: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Canvas(modifier = modifier.size(size)) {
-        val w = this.size.width
-        val h = this.size.height
-        val cx = w / 2f
+    val transition = rememberInfiniteTransition(label = "assistant_dots")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2 * PI).toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 850, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "dots_phase",
+    )
 
-        // Blue mic capsule
-        val capW = w * 0.28f
-        val capH = h * 0.48f
-        drawRoundRect(
-            color = AssistantBlue,
-            topLeft = Offset(cx - capW / 2f, h * 0.08f),
-            size = Size(capW, capH),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(capW / 2f, capW / 2f),
-        )
+    val colors = listOf(AssistantBlue, AssistantRed, AssistantYellow, AssistantGreen)
 
-        // Left yellow arc + right red arc cradle
-        val strokeW = w * 0.095f
-        val arcTop = h * 0.28f
-        val arcSize = Size(w * 0.56f, h * 0.42f)
-        val arcTopLeft = Offset(cx - arcSize.width / 2f, arcTop)
-        drawArc(
-            color = AssistantYellow,
-            startAngle = 180f,
-            sweepAngle = -90f,
-            useCenter = false,
-            topLeft = arcTopLeft,
-            size = arcSize,
-            style = Stroke(width = strokeW, cap = StrokeCap.Round),
-        )
-        drawArc(
-            color = AssistantRed,
-            startAngle = 90f,
-            sweepAngle = -90f,
-            useCenter = false,
-            topLeft = arcTopLeft,
-            size = arcSize,
-            style = Stroke(width = strokeW, cap = StrokeCap.Round),
-        )
-
-        // Green stem
-        drawLine(
-            color = AssistantGreen,
-            start = Offset(cx, h * 0.70f),
-            end = Offset(cx, h * 0.90f),
-            strokeWidth = strokeW,
-            cap = StrokeCap.Round,
-        )
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        colors.forEachIndexed { idx, color ->
+            Canvas(modifier = Modifier.size(width = 6.dp, height = 24.dp)) {
+                val wave = sin(phase + idx * 0.9f)
+                val barHeight = when {
+                    isListening -> {
+                        val dynamic = (0.35f + amplitude * 0.65f) * (0.65f + 0.35f * wave)
+                        (size.height * dynamic).coerceIn(6f, size.height)
+                    }
+                    isThinking -> {
+                        val pulse = 0.4f + 0.3f * wave
+                        (size.height * pulse).coerceIn(6f, size.height)
+                    }
+                    else -> 6f
+                }
+                val top = (size.height - barHeight) / 2f
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset((size.width - 5f) / 2f, top),
+                    size = Size(5f, barHeight),
+                    cornerRadius = CornerRadius(2.5f, 2.5f),
+                )
+            }
+        }
     }
 }
 
 /**
- * Perfect circle with the 4-color Google gradient (matches the app icon).
+ * Perfect circle with the 4-color Google gradient.
  */
 @Composable
 fun GoogleGradientCircleIcon(
@@ -222,7 +220,7 @@ fun GoogleGradientCircleIcon(
 }
 
 /**
- * Iconic 4-dot Google Assistant emblem.
+ * 4-dot Google Assistant emblem.
  */
 @Composable
 fun AssistantFourDotsMark(

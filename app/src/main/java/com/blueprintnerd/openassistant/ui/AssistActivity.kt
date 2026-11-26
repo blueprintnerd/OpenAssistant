@@ -11,7 +11,9 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -37,8 +39,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -64,6 +64,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -71,13 +74,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.blueprintnerd.openassistant.OpenAssistantApp
+import com.blueprintnerd.openassistant.R
 import com.blueprintnerd.openassistant.engine.AssistantResponse
 import com.blueprintnerd.openassistant.engine.CardType
 import com.blueprintnerd.openassistant.engine.CommandRouter
 import com.blueprintnerd.openassistant.speech.SttCallbacks
-import com.blueprintnerd.openassistant.ui.components.AssistantFourDotsMark
 import com.blueprintnerd.openassistant.ui.components.AssistantGlowingEdgeBar
-import com.blueprintnerd.openassistant.ui.components.GoogleFourColorMicIcon
+import com.blueprintnerd.openassistant.ui.components.AssistantListeningDots
 import com.blueprintnerd.openassistant.ui.theme.AssistantBlue
 import com.blueprintnerd.openassistant.ui.theme.OpenAssistantTheme
 import kotlinx.coroutines.delay
@@ -121,6 +124,12 @@ class AssistActivity : ComponentActivity() {
     }
 }
 
+/**
+ * 1:1 Google Assistant overlay matching the official Assistant APK layouts:
+ * - assistant_content.xml (logo header, conversation panel, assistant_prompt)
+ * - user_chat_bubble.xml / assistant_chat_bubble.xml (radius 20dp, margin 40dp, overlay_gutter 24dp)
+ * - inputui_layout.xml (mic_icon_backing 56dp, quantum_ic_keyboard, P6 Assistant glow)
+ */
 @Composable
 private fun GoogleAssistantOverlay(
     app: OpenAssistantApp,
@@ -243,7 +252,7 @@ private fun GoogleAssistantOverlay(
                 shadowElevation = 24.dp,
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    // Subtle Material You drag pill
+                    // Top drag handle
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -258,82 +267,126 @@ private fun GoogleAssistantOverlay(
                         )
                     }
 
-                    // Main compact Google Assistant sheet body
+                    // Main Sheet Content
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp)
+                            .padding(top = 8.dp, bottom = 4.dp)
                             .verticalScroll(rememberScrollState()),
-                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        // Top-left 4-dot emblem (exact NGA placement)
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            AssistantFourDotsMark(
-                                size = 24.dp,
-                                modifier = Modifier.align(Alignment.CenterStart),
+                        // Header row with authentic product_logo_assistant_color_24
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.product_logo_assistant_color_24),
+                                contentDescription = "Google Assistant Logo",
+                                modifier = Modifier.size(24.dp),
                             )
+                            IconButton(onClick = onOpenSettings, modifier = Modifier.size(32.dp)) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Tune,
+                                    contentDescription = "Settings",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
                         }
 
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(8.dp))
 
-                        // Centered greeting or live spoken words
-                        if (transcript.isNotBlank()) {
-                            Text(
-                                text = transcript,
-                                style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        } else if (response == null) {
-                            Text(
-                                text = promptText,
-                                style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
+                        // Conversational Plate
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            // Initial Assistant Prompt ("Hi, how can I help?") matching @style/AssistantPrompt
+                            if (transcript.isBlank() && response == null) {
+                                Text(
+                                    text = promptText,
+                                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Normal,
+                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
+                                )
+                            }
 
-                        // Rich Answer Card
-                        response?.let { res ->
-                            Spacer(Modifier.height(14.dp))
-                            AssistantAnswerCard(
-                                response = res,
-                                onActionUrl = { url -> app.deviceActions.openUrl(url) },
-                                onActionCommand = { cmd -> executeQuery(cmd) },
-                            )
-                        }
+                            // User Bubble matching @style/UserBubble (layout_gravity=end, radius=20dp)
+                            if (transcript.isNotBlank()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 40.dp, end = 24.dp, top = 4.dp, bottom = 6.dp),
+                                    horizontalArrangement = Arrangement.End,
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                                    ) {
+                                        Text(
+                                            text = transcript,
+                                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
+                                }
+                            }
 
-                        // Horizontal suggestion pills
-                        val chips = response?.suggestions?.ifEmpty { null }
-                            ?: if (response == null && !isListening) CommandRouter.DEFAULT_SUGGESTIONS else emptyList()
-                        if (chips.isNotEmpty()) {
-                            Spacer(Modifier.height(14.dp))
-                            LazyRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                contentPadding = PaddingValues(end = 8.dp),
-                            ) {
-                                items(chips) { chip ->
-                                    AssistChip(
-                                        onClick = { executeQuery(chip) },
-                                        label = { Text(chip) },
-                                        shape = RoundedCornerShape(20.dp),
-                                        colors = AssistChipDefaults.assistChipColors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                        ),
-                                        border = null,
+                            // Assistant Answer Card
+                            response?.let { res ->
+                                Box(modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)) {
+                                    AssistantAnswerCard(
+                                        response = res,
+                                        onActionUrl = { url -> app.deviceActions.openUrl(url) },
+                                        onActionCommand = { cmd -> executeQuery(cmd) },
                                     )
                                 }
                             }
                         }
 
-                        // Optional keyboard bar
-                        if (showKeyboard) {
-                            Spacer(Modifier.height(12.dp))
-                            Row(
+                        // Horizontal Suggestion Rail matching assistant_content.xml @id/suggest_rail
+                        val chips = response?.suggestions?.ifEmpty { null }
+                            ?: if (response == null && !isListening) CommandRouter.DEFAULT_SUGGESTIONS else emptyList()
+                        if (chips.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            LazyRow(
                                 modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                contentPadding = PaddingValues(horizontal = 24.dp),
+                            ) {
+                                items(chips) { chip ->
+                                    AssistChip(
+                                        onClick = { executeQuery(chip) },
+                                        label = {
+                                            Text(
+                                                chip,
+                                                color = AssistantBlue,
+                                                fontWeight = FontWeight.Medium,
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(20.dp),
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = MaterialTheme.colorScheme.surface,
+                                        ),
+                                        border = AssistChipDefaults.assistChipBorder(
+                                            enabled = true,
+                                            borderColor = MaterialTheme.colorScheme.outlineVariant,
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+
+                        // Keyboard Input Container matching inputui_keyboard.xml
+                        if (showKeyboard) {
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 OutlinedTextField(
@@ -352,75 +405,86 @@ private fun GoogleAssistantOverlay(
                                         }
                                     ),
                                 )
-                                Spacer(Modifier.width(6.dp))
+                                Spacer(Modifier.width(8.dp))
                                 IconButton(
                                     onClick = {
                                         val q = typedInput
                                         typedInput = ""
                                         executeQuery(q)
                                     },
+                                    modifier = Modifier.size(44.dp),
                                 ) {
-                                    Icon(
-                                        Icons.AutoMirrored.Filled.Send,
+                                    Image(
+                                        painter = painterResource(id = R.drawable.quantum_ic_send_googblue_24),
                                         contentDescription = "Send",
-                                        tint = AssistantBlue,
+                                        modifier = Modifier.size(24.dp),
                                     )
                                 }
                             }
                         }
 
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(8.dp))
 
-                        // Bottom action bar: Keyboard (left) | 4-color Mic when idle (center) | Settings (right)
+                        // Bottom Control Plate matching inputui_layout.xml:
+                        // - keyboard_indicator (left)
+                        // - mic_icon_backing (56dp center circular backing with ic_mic_color)
+                        // - Spacer / tap to finish (right)
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .padding(horizontal = 24.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            IconButton(onClick = { showKeyboard = !showKeyboard }) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Keyboard,
+                            IconButton(
+                                onClick = { showKeyboard = !showKeyboard },
+                                modifier = Modifier.size(48.dp),
+                            ) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.quantum_ic_keyboard_grey600_24),
                                     contentDescription = "Keyboard",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp),
                                 )
                             }
 
-                            if (!isListening && !isThinking) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        .clickable { startListening() },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    GoogleFourColorMicIcon(size = 24.dp)
-                                }
-                            } else {
-                                // Tap anywhere in the center to finish speaking early
-                                Box(
-                                    modifier = Modifier
-                                        .size(width = 80.dp, height = 40.dp)
-                                        .clickable(
-                                            indication = null,
-                                            interactionSource = remember { MutableInteractionSource() },
-                                        ) {
-                                            if (isListening) app.sttEngine.requestStop()
+                            // Center mic plate matching input_error_mic_icon_size = 56.0dp
+                            Box(
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .shadow(elevation = 3.dp, shape = CircleShape)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .clickable {
+                                        if (isListening) {
+                                            app.sttEngine.requestStop()
+                                        } else {
+                                            startListening()
                                         }
-                                )
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (isListening || isThinking) {
+                                    AssistantListeningDots(
+                                        amplitude = amplitude,
+                                        isListening = isListening,
+                                        isThinking = isThinking,
+                                    )
+                                } else {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.ic_mic_color),
+                                        contentDescription = "Microphone",
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                }
                             }
 
-                            IconButton(onClick = onOpenSettings) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Tune,
-                                    contentDescription = "Settings",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                            // Right invisible touch target to balance layout symmetry
+                            Box(modifier = Modifier.size(48.dp))
                         }
                     }
 
-                    // Flush edge-to-edge feathered 4-color Google Assistant glowing light bar
+                    // Bottom Edge Glow matching AssistantP6GlowView in inputui_layout.xml
                     AssistantGlowingEdgeBar(
                         amplitude = amplitude,
                         isListening = isListening,

@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.blueprintnerd.openassistant.OpenAssistantApp
+import com.blueprintnerd.openassistant.data.MusicProvider
 import com.blueprintnerd.openassistant.data.SearchEngine
 import com.blueprintnerd.openassistant.service.WakeWordForegroundService
 import com.blueprintnerd.openassistant.speech.ModelKind
@@ -388,6 +389,7 @@ private fun SimpleSettingsScreen(
     var useFahrenheit by remember { mutableStateOf(app.preferences.useFahrenheit) }
     var defaultCity by remember { mutableStateOf(app.preferences.defaultCity) }
     var selectedEngine by remember { mutableStateOf(app.preferences.searchEngine) }
+    var selectedMusic by remember { mutableStateOf(app.preferences.musicProvider) }
     var shoppingList by remember { mutableStateOf(app.preferences.getShoppingList()) }
     var showAdvanced by remember { mutableStateOf(false) }
     var haUrl by remember { mutableStateOf(app.preferences.homeAssistantUrl) }
@@ -540,6 +542,26 @@ private fun SimpleSettingsScreen(
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
                 )
+            }
+
+            item { HorizontalDivider() }
+
+            // Music App
+            item {
+                Text("Music App", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MusicProvider.entries.forEach { provider ->
+                        FilterChip(
+                            selected = selectedMusic == provider,
+                            onClick = {
+                                selectedMusic = provider
+                                app.preferences.musicProvider = provider
+                            },
+                            label = { Text(provider.label) },
+                        )
+                    }
+                }
             }
 
             item { HorizontalDivider() }

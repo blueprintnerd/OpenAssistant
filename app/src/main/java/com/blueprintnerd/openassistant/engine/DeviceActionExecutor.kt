@@ -22,6 +22,7 @@ import android.provider.Settings
 import android.view.KeyEvent
 import androidx.core.content.ContextCompat
 import com.blueprintnerd.openassistant.data.AssistantPreferences
+import com.blueprintnerd.openassistant.data.MusicProvider
 import com.blueprintnerd.openassistant.data.ReminderItem
 import com.blueprintnerd.openassistant.service.ReminderReceiver
 import java.net.URLEncoder
@@ -44,7 +45,7 @@ interface DeviceActions {
     fun sendSms(target: String, message: String): String
     fun navigateTo(destination: String): String
     fun sendMediaKey(keyCode: Int, actionLabel: String): String
-    fun playMediaSearch(query: String): String
+    fun playMediaSearch(query: String, provider: MusicProvider? = null): String
     fun openSettingsPanel(kind: String): String
     fun createCalendarEvent(title: String): String
     fun scheduleReminder(text: String, delayMillis: Long): String
@@ -264,16 +265,48 @@ class AndroidDeviceActionExecutor(
         return actionLabel
     }
 
-    override fun playMediaSearch(query: String): String {
+    override fun playMediaSearch(query: String, provider: MusicProvider?): String {
+        val chosen = provider ?: preferences.musicProvider
+        val targetPkg = chosen.packageName
+
         val intent = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
             putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
             putExtra(android.app.SearchManager.QUERY, query)
+            if (targetPkg != null) setPackage(targetPkg)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        return if (startSafe(intent)) {
-            "Playing $query."
-        } else {
-            "No media player responded to play $query."
+        if (startSafe(intent)) {
+            return if (targetPkg != null) "Playing $query on ${chosen.label}." else "Playing $query."
+        }
+
+        // Fallback to direct app search URIs for Spotify and YouTube Music
+        val enc = URLEncoder.encode(query.trim(), "UTF-8")
+        return when (chosen) {
+            MusicProvider.SPOTIFY -> {
+                val spotifyUri = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:$enc")).apply {
+                    setPackage("com.spotify.music")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                if (startSafe(spotifyUri)) {
+                    "Searching Spotify for $query."
+                } else {
+                    openUrl("https://open.spotify.com/search/$enc")
+                    "Opening Spotify web search for $query."
+                }
+            }
+            MusicProvider.YT_MUSIC -> {
+                val ytmIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://music.youtube.com/search?q=$enc")).apply {
+                    setPackage("com.google.android.apps.youtube.music")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                if (startSafe(ytmIntent)) {
+                    "Searching YouTube Music for $query."
+                } else {
+                    openUrl("https://music.youtube.com/search?q=$enc")
+                    "Opening YouTube Music for $query."
+                }
+            }
+            MusicProvider.AUTO -> "No media player responded to play $query."
         }
     }
 

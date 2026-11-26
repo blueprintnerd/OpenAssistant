@@ -25,6 +25,12 @@ enum class SearchEngine(val label: String, val searchUrlTemplate: String) {
     KAGI("Kagi", "https://kagi.com/search?q=%s"),
 }
 
+enum class MusicProvider(val label: String, val packageName: String?) {
+    AUTO("System Default", null),
+    SPOTIFY("Spotify", "com.spotify.music"),
+    YT_MUSIC("YouTube Music", "com.google.android.apps.youtube.music"),
+}
+
 class AssistantPreferences(context: Context) : AssistantDataStore {
     private val prefs = context.getSharedPreferences("open_assistant_prefs", Context.MODE_PRIVATE)
 
@@ -74,6 +80,13 @@ class AssistantPreferences(context: Context) : AssistantDataStore {
             return SearchEngine.entries.firstOrNull { it.name == name } ?: SearchEngine.DUCKDUCKGO
         }
         set(value) = prefs.edit().putString(KEY_SEARCH_ENGINE, value.name).apply()
+
+    override var musicProvider: MusicProvider
+        get() {
+            val name = prefs.getString(KEY_MUSIC_PROVIDER, MusicProvider.AUTO.name)
+            return MusicProvider.entries.firstOrNull { it.name == name } ?: MusicProvider.AUTO
+        }
+        set(value) = prefs.edit().putString(KEY_MUSIC_PROVIDER, value.name).apply()
 
     override var homeAssistantUrl: String
         get() = prefs.getString(KEY_HA_URL, "") ?: ""
@@ -208,6 +221,7 @@ class AssistantPreferences(context: Context) : AssistantDataStore {
         private const val KEY_USE_FAHRENHEIT = "use_fahrenheit"
         private const val KEY_DEFAULT_CITY = "default_city"
         private const val KEY_SEARCH_ENGINE = "search_engine"
+        private const val KEY_MUSIC_PROVIDER = "music_provider"
         private const val KEY_HA_URL = "ha_url"
         private const val KEY_HA_TOKEN = "ha_token"
         private const val KEY_SHOPPING_LIST = "shopping_list"

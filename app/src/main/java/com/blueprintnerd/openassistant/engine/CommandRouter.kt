@@ -3,6 +3,7 @@ package com.blueprintnerd.openassistant.engine
 import android.media.AudioManager
 import android.view.KeyEvent
 import com.blueprintnerd.openassistant.data.AssistantDataStore
+import com.blueprintnerd.openassistant.data.MusicProvider
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -51,11 +52,19 @@ class CommandRouter(
         }
 
         // 2. Greetings & Help
-        if (lower in setOf("hi", "hello", "hey", "hey there", "what can you do", "help")) {
+        if (lower in setOf("hi", "hello", "hey", "hey there", "hi there", "yo", "sup")) {
             return AssistantResponse(
                 title = "OpenAssistant",
-                body = "I can set timers and alarms, control your phone, check the weather, do math and unit conversions, manage reminders and shopping lists, look up Wikipedia and definitions, control Home Assistant devices, and run routines — all without Google servers or LLMs.",
-                spokenText = "Hi! Ask me to set a timer, check the weather, control your phone, or look something up.",
+                body = "Hi!",
+                spokenText = "Hi!",
+                suggestions = DEFAULT_SUGGESTIONS,
+            )
+        }
+        if (lower in setOf("what can you do", "help")) {
+            return AssistantResponse(
+                title = "OpenAssistant",
+                body = "Try asking me to set a timer, check the weather, play music on Spotify or YouTube Music, or control your phone.",
+                spokenText = "Try asking me to set a timer, check the weather, play music, or control your phone.",
                 suggestions = DEFAULT_SUGGESTIONS,
             )
         }
@@ -111,6 +120,13 @@ class CommandRouter(
                 return AssistantResponse("Media", device.sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS, "Playing previous track."), cardType = CardType.ACTION_CONFIRMATION)
             lower in setOf("stop music", "stop media", "stop playing") ->
                 return AssistantResponse("Media", device.sendMediaKey(KeyEvent.KEYCODE_MEDIA_STOP, "Stopped playback."), cardType = CardType.ACTION_CONFIRMATION)
+        }
+        Regex("""^play\s+(.+?)\s+on\s+(spotify|youtube music|yt music)$""").matchEntire(lower)?.let { m ->
+            val query = m.groupValues[1].trim()
+            val service = m.groupValues[2].trim()
+            val provider = if (service == "spotify") MusicProvider.SPOTIFY else MusicProvider.YT_MUSIC
+            val msg = device.playMediaSearch(query, provider)
+            return AssistantResponse("Media", msg, cardType = CardType.ACTION_CONFIRMATION, dismissAfterMs = 2000)
         }
         Regex("""^play\s+(.+)$""").matchEntire(lower)?.let { m ->
             val query = m.groupValues[1].trim()
@@ -283,7 +299,8 @@ class CommandRouter(
 
         // 17. Launch App
         Regex("""^(?:open|launch|start)\s+(.+)$""", RegexOption.IGNORE_CASE).matchEntire(input)?.let { m ->
-            val appName = m.groupValues[1].trim()
+            val rawApp = m.groupValues[1].trim()
+            val appName = if (rawApp.equals("yt music", ignoreCase = true)) "YouTube Music" else rawApp
             val launched = device.launchApp(appName)
             if (launched != null) {
                 return AssistantResponse("Apps", launched, cardType = CardType.ACTION_CONFIRMATION, dismissAfterMs = 1500)

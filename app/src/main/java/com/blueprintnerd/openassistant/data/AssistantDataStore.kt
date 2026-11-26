@@ -4,6 +4,7 @@ interface AssistantDataStore {
     val useFahrenheit: Boolean
     val defaultCity: String
     val searchEngine: SearchEngine
+    val musicProvider: MusicProvider
     val homeAssistantUrl: String
     val homeAssistantToken: String
 

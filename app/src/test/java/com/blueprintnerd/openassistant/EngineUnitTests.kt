@@ -1,6 +1,7 @@
 package com.blueprintnerd.openassistant
 
 import com.blueprintnerd.openassistant.data.AssistantDataStore
+import com.blueprintnerd.openassistant.data.MusicProvider
 import com.blueprintnerd.openassistant.data.ReminderItem
 import com.blueprintnerd.openassistant.data.Routine
 import com.blueprintnerd.openassistant.data.SearchEngine
@@ -35,7 +36,7 @@ class EngineUnitTests {
         override fun sendSms(target: String, message: String) = "SMS:$target:$message"
         override fun navigateTo(destination: String) = "Nav:$destination"
         override fun sendMediaKey(keyCode: Int, actionLabel: String) = actionLabel
-        override fun playMediaSearch(query: String) = "Play:$query"
+        override fun playMediaSearch(query: String, provider: MusicProvider?) = "Play:$query:${provider?.name ?: "DEFAULT"}"
         override fun openSettingsPanel(kind: String) = "Settings:$kind"
         override fun createCalendarEvent(title: String) = "Calendar:$title"
         override fun scheduleReminder(text: String, delayMillis: Long) = "Reminder:$text:$delayMillis"
@@ -47,6 +48,7 @@ class EngineUnitTests {
         override var useFahrenheit = true
         override var defaultCity = "New York"
         override var searchEngine = SearchEngine.DUCKDUCKGO
+        override var musicProvider = MusicProvider.AUTO
         override var homeAssistantUrl = ""
         override var homeAssistantToken = ""
         private val shopping = mutableListOf<String>()
@@ -143,5 +145,15 @@ class EngineUnitTests {
         assertEquals("Routine: Morning", routineResp.title)
         assertEquals(2, routineResp.listItems.size)
         assertNotNull(router.handle("what time is it in tokyo").body)
+
+        val hiResp = router.handle("hi")
+        assertEquals("Hi!", hiResp.body)
+        assertEquals("Hi!", hiResp.spokenText)
+
+        val spotifyResp = router.handle("play Daft Punk on Spotify")
+        assertEquals("Play:daft punk:SPOTIFY", spotifyResp.body)
+
+        val ytmResp = router.handle("play lo-fi beats on yt music")
+        assertEquals("Play:lo-fi beats:YT_MUSIC", ytmResp.body)
     }
 }

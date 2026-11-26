@@ -38,6 +38,10 @@ class AssistantPreferences(context: Context) : AssistantDataStore {
         get() = prefs.getBoolean(KEY_WAKE_WORD_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_WAKE_WORD_ENABLED, value).apply()
 
+    var pauseWakeWhenScreenOff: Boolean
+        get() = prefs.getBoolean(KEY_PAUSE_SCREEN_OFF, false)
+        set(value) = prefs.edit().putBoolean(KEY_PAUSE_SCREEN_OFF, value).apply()
+
     var wakeWords: List<String>
         get() {
             val raw = prefs.getString(KEY_WAKE_WORDS, null)
@@ -220,6 +224,7 @@ class AssistantPreferences(context: Context) : AssistantDataStore {
         )
 
         private const val KEY_WAKE_WORD_ENABLED = "wake_word_enabled"
+        private const val KEY_PAUSE_SCREEN_OFF = "pause_screen_off"
         private const val KEY_WAKE_WORDS = "wake_words"
         private const val KEY_WAKE_THRESHOLD = "wake_threshold"
         private const val KEY_WAKE_BOOST = "wake_boost"

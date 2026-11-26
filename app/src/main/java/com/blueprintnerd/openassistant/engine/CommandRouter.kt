@@ -6,6 +6,7 @@ import com.blueprintnerd.openassistant.data.AssistantDataStore
 import com.blueprintnerd.openassistant.data.MusicProvider
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
@@ -16,8 +17,22 @@ class CommandRouter(
     private val store: AssistantDataStore,
     private val web: WebKnowledgeClient = WebKnowledgeClient(),
 ) {
+    private sealed interface PendingFollowUp {
+        data object TimerDuration : PendingFollowUp
+        data object AlarmTime : PendingFollowUp
+        data class SmsBody(val recipient: String) : PendingFollowUp
+        data object ReminderText : PendingFollowUp
+    }
+
+    @Volatile
+    private var pendingFollowUp: PendingFollowUp? = null
+
+    fun clearPendingFollowUp() {
+        pendingFollowUp = null
+    }
+
     suspend fun handle(rawInput: String, allowRoutines: Boolean = true): AssistantResponse {
-        val input = rawInput.trim()
+        val input = SpeechNormalizer.normalize(rawInput)
         if (input.isEmpty()) {
             return AssistantResponse(
                 title = "Listening",
@@ -27,6 +42,45 @@ class CommandRouter(
             )
         }
         val lower = input.lowercase(Locale.US).trimEnd('.', '!', '?').trim()
+
+        // 0. Handle multi-turn follow-up responses
+        val pending = pendingFollowUp
+        if (pending != null && allowRoutines) {
+            pendingFollowUp = null
+            if (lower in setOf("cancel", "never mind", "nevermind", "stop", "forget it")) {
+                return AssistantResponse("Cancelled", "Okay, cancelled.")
+            }
+            when (pending) {
+                PendingFollowUp.TimerDuration -> {
+                    val parsed = parseTimerCommand("set timer for $lower")
+                    if (parsed != null) {
+                        val msg = device.setTimer(parsed.first, parsed.second)
+                        return AssistantResponse("Timer", msg, cardType = CardType.ACTION_CONFIRMATION)
+                    }
+                }
+                PendingFollowUp.AlarmTime -> {
+                    val parsed = parseAlarmCommand("set alarm for $lower")
+                    if (parsed != null) {
+                        val msg = device.setAlarm(parsed.first, parsed.second, parsed.third)
+                        return AssistantResponse("Alarm", msg, cardType = CardType.ACTION_CONFIRMATION)
+                    }
+                }
+                is PendingFollowUp.SmsBody -> {
+                    val msg = device.sendSms(pending.recipient, input)
+                    return AssistantResponse("Messages", msg, cardType = CardType.ACTION_CONFIRMATION)
+                }
+                PendingFollowUp.ReminderText -> {
+                    parseAbsoluteReminder("remind me to $input")?.let { (text, ts, label) ->
+                        val msg = device.scheduleReminderAt(text, ts, label)
+                        return AssistantResponse("Reminder", msg, cardType = CardType.ACTION_CONFIRMATION)
+                    }
+                    parseReminderCommand("remind me to $input")?.let { (text, delayMs) ->
+                        val msg = device.scheduleReminder(text, delayMs)
+                        return AssistantResponse("Reminder", msg, cardType = CardType.ACTION_CONFIRMATION)
+                    }
+                }
+            }
+        }
 
         // 1. User Routines
         if (allowRoutines) {
@@ -140,6 +194,15 @@ class CommandRouter(
         if (lower in setOf("show timers", "show my timers", "open timers")) {
             return AssistantResponse("Timers", device.showTimers(), cardType = CardType.ACTION_CONFIRMATION)
         }
+        if (lower in setOf("set a timer", "set timer", "start a timer", "start timer", "timer")) {
+            pendingFollowUp = PendingFollowUp.TimerDuration
+            return AssistantResponse(
+                title = "Timer",
+                body = "For how long?",
+                spokenText = "For how long?",
+                expectFollowUp = true,
+            )
+        }
         parseTimerCommand(lower)?.let { (seconds, label) ->
             val msg = device.setTimer(seconds, label)
             return AssistantResponse("Timer", msg, cardType = CardType.ACTION_CONFIRMATION)
@@ -148,6 +211,15 @@ class CommandRouter(
         // 8. Alarms
         if (lower in setOf("show alarms", "show my alarms", "open alarms")) {
             return AssistantResponse("Alarms", device.showAlarms(), cardType = CardType.ACTION_CONFIRMATION)
+        }
+        if (lower in setOf("set an alarm", "set alarm", "wake me up", "alarm")) {
+            pendingFollowUp = PendingFollowUp.AlarmTime
+            return AssistantResponse(
+                title = "Alarm",
+                body = "For what time?",
+                spokenText = "For what time?",
+                expectFollowUp = true,
+            )
         }
         parseAlarmCommand(lower)?.let { (hour24, minute, label) ->
             val msg = device.setAlarm(hour24, minute, label)
@@ -170,6 +242,19 @@ class CommandRouter(
                     listItems = items,
                 )
             }
+        }
+        if (lower in setOf("remind me", "set a reminder", "add a reminder", "create a reminder")) {
+            pendingFollowUp = PendingFollowUp.ReminderText
+            return AssistantResponse(
+                title = "Reminder",
+                body = "What would you like to be reminded about?",
+                spokenText = "What would you like to be reminded about?",
+                expectFollowUp = true,
+            )
+        }
+        parseAbsoluteReminder(input)?.let { (text, triggerAt, timeLabel) ->
+            val msg = device.scheduleReminderAt(text, triggerAt, timeLabel)
+            return AssistantResponse("Reminder", msg, cardType = CardType.ACTION_CONFIRMATION)
         }
         parseReminderCommand(input)?.let { (text, delayMs) ->
             val msg = device.scheduleReminder(text, delayMs)
@@ -236,6 +321,15 @@ class CommandRouter(
             .matchEntire(input)?.let { m ->
                 val target = m.groupValues[1].trim()
                 val body = m.groupValues[2].trim()
+                if (body.isEmpty()) {
+                    pendingFollowUp = PendingFollowUp.SmsBody(target)
+                    return AssistantResponse(
+                        title = "Messages",
+                        body = "What's the message for $target?",
+                        spokenText = "What's the message for $target?",
+                        expectFollowUp = true,
+                    )
+                }
                 val msg = device.sendSms(target, body)
                 return AssistantResponse("Messages", msg, cardType = CardType.ACTION_CONFIRMATION)
             }
@@ -428,10 +522,20 @@ class CommandRouter(
             return AssistantResponse("Joke", joke)
         }
 
-        // 22. Weather (Open-Meteo, zero Google)
+        // 22. Weather (Open-Meteo, zero Google — uses GPS if granted and no city given)
         parseWeatherCity(lower)?.let { requestedCity ->
-            val city = requestedCity.ifBlank { store.defaultCity }
-            val weather = web.fetchWeather(city, store.useFahrenheit)
+            val weather = if (requestedCity.isBlank()) {
+                val coords = device.getLastKnownCoordinates()
+                if (coords != null) {
+                    web.fetchWeatherByCoords(coords.first, coords.second, store.useFahrenheit)
+                        ?: web.fetchWeather(store.defaultCity, store.useFahrenheit)
+                } else {
+                    web.fetchWeather(store.defaultCity, store.useFahrenheit)
+                }
+            } else {
+                web.fetchWeather(requestedCity, store.useFahrenheit)
+            }
+            val labelCity = requestedCity.ifBlank { store.defaultCity }
             return if (weather != null) {
                 AssistantResponse(
                     title = "Weather",
@@ -441,7 +545,7 @@ class CommandRouter(
                     weather = weather,
                 )
             } else {
-                AssistantResponse("Weather", "Could not fetch weather for '$city'. Check your internet connection.", cardType = CardType.ERROR)
+                AssistantResponse("Weather", "Could not fetch weather for '$labelCity'. Check your internet connection.", cardType = CardType.ERROR)
             }
         }
 
@@ -570,6 +674,67 @@ class CommandRouter(
         if (amPm == "pm" && hour in 1..11) hour += 12
         if (amPm == "am" && hour == 12) hour = 0
         return Triple(hour, minute, label)
+    }
+
+    internal fun parseAbsoluteReminder(input: String): Triple<String, Long, String>? {
+        val trimmed = input.trim()
+        // Pattern A: "remind me to <text> (tomorrow|tonight)? at <h>(:<m>)? (am|pm)?"
+        val p1 = Regex(
+            """^remind me\s+(?:to\s+)?(.+?)\s+(?:(tomorrow|tonight|today)\s+)?at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?$""",
+            RegexOption.IGNORE_CASE,
+        )
+        // Pattern B: "remind me (tomorrow|tonight)? at <h>(:<m>)? (am|pm)? to <text>"
+        val p2 = Regex(
+            """^remind me\s+(?:(tomorrow|tonight|today)\s+)?at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\s+(?:to\s+)?(.+)$""",
+            RegexOption.IGNORE_CASE,
+        )
+
+        val text: String
+        val dayWord: String
+        var hour: Int
+        val minute: Int
+        val amPmRaw: String
+
+        val m1 = p1.matchEntire(trimmed)
+        val m2 = if (m1 == null) p2.matchEntire(trimmed) else null
+        when {
+            m1 != null -> {
+                text = m1.groupValues[1].trim()
+                dayWord = m1.groupValues[2].lowercase(Locale.US)
+                hour = m1.groupValues[3].toIntOrNull() ?: return null
+                minute = m1.groupValues[4].toIntOrNull() ?: 0
+                amPmRaw = m1.groupValues[5].replace(".", "").lowercase(Locale.US)
+            }
+            m2 != null -> {
+                dayWord = m2.groupValues[1].lowercase(Locale.US)
+                hour = m2.groupValues[2].toIntOrNull() ?: return null
+                minute = m2.groupValues[3].toIntOrNull() ?: 0
+                amPmRaw = m2.groupValues[4].replace(".", "").lowercase(Locale.US)
+                text = m2.groupValues[5].trim()
+            }
+            else -> return null
+        }
+
+        if (text.isEmpty() || minute !in 0..59 || hour !in 0..23) return null
+        if (amPmRaw == "pm" && hour in 1..11) hour += 12
+        else if (amPmRaw == "am" && hour == 12) hour = 0
+        else if (amPmRaw.isEmpty() && dayWord == "tonight" && hour in 1..11) hour += 12
+
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            if (dayWord == "tomorrow" || timeInMillis <= System.currentTimeMillis()) {
+                add(Calendar.DAY_OF_YEAR, 1)
+            }
+        }
+
+        val timeFmt = SimpleDateFormat("h:mm a", Locale.US)
+        val today = Calendar.getInstance()
+        val isTomorrow = cal.get(Calendar.DAY_OF_YEAR) != today.get(Calendar.DAY_OF_YEAR)
+        val prefix = if (isTomorrow) "Tomorrow at " else "Today at "
+        return Triple(text, cal.timeInMillis, prefix + timeFmt.format(cal.time))
     }
 
     internal fun parseReminderCommand(input: String): Pair<String, Long>? {

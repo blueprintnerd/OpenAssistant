@@ -6,7 +6,10 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import android.media.ToneGenerator
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import com.blueprintnerd.openassistant.data.AssistantPreferences
 import com.k2fsa.sherpa.onnx.OfflineTts
@@ -41,12 +44,29 @@ class LocalTtsEngine(
     @Volatile
     private var activeTrack: AudioTrack? = null
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var speakJob: Job? = null
+    @Volatile
+    private var pendingOnDone: (() -> Unit)? = null
 
     init {
         androidTts = TextToSpeech(appContext) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 androidTts?.language = Locale.US
+                androidTts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) {
+                        val cb = pendingOnDone
+                        pendingOnDone = null
+                        if (cb != null) mainHandler.post(cb)
+                    }
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) {
+                        val cb = pendingOnDone
+                        pendingOnDone = null
+                        if (cb != null) mainHandler.post(cb)
+                    }
+                })
                 androidTtsReady = true
             }
         }
@@ -64,20 +84,25 @@ class LocalTtsEngine(
         }
     }
 
-    fun speak(text: String) {
-        if (!preferences.speakResponses || text.isBlank()) return
+    fun speak(text: String, onDone: (() -> Unit)? = null) {
+        if (!preferences.speakResponses || text.isBlank()) {
+            if (onDone != null) mainHandler.post(onDone)
+            return
+        }
         stop()
         val clean = text.replace(Regex("\\s+"), " ").trim()
 
         if (preferences.preferPiperTts && modelManager.isInstalled(ModelKind.TTS)) {
             speakJob = scope.launch {
                 val spoken = speakWithPiper(clean)
-                if (!spoken) {
-                    speakWithAndroidTts(clean)
+                if (spoken) {
+                    if (onDone != null) mainHandler.post(onDone)
+                } else {
+                    speakWithAndroidTts(clean, onDone)
                 }
             }
         } else {
-            speakWithAndroidTts(clean)
+            speakWithAndroidTts(clean, onDone)
         }
     }
 
@@ -164,13 +189,17 @@ class LocalTtsEngine(
         }
     }
 
-    private fun speakWithAndroidTts(text: String) {
+    private fun speakWithAndroidTts(text: String, onDone: (() -> Unit)? = null) {
         if (androidTtsReady) {
+            pendingOnDone = onDone
             androidTts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "oa_utterance")
+        } else if (onDone != null) {
+            mainHandler.post(onDone)
         }
     }
 
     fun stop() {
+        pendingOnDone = null
         speakJob?.cancel()
         speakJob = null
         activeTrack?.let {

@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.blueprintnerd.openassistant.OpenAssistantApp
@@ -44,7 +45,12 @@ class WakeWordForegroundService : Service() {
             app.wakeWordEngine.stop()
         }
 
-        val started = app.wakeWordEngine.start { detectedKeyword ->
+        val powerManager = getSystemService(PowerManager::class.java)
+        val started = app.wakeWordEngine.start(
+            isExternallyPaused = {
+                app.preferences.pauseWakeWhenScreenOff && powerManager?.isInteractive == false
+            },
+        ) { detectedKeyword ->
             app.ttsEngine.playActivationChime()
             val launch = Intent(this, AssistActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)

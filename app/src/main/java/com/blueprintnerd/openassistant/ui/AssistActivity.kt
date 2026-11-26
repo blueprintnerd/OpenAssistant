@@ -120,6 +120,7 @@ class AssistActivity : ComponentActivity() {
 
     override fun onDestroy() {
         app.sttEngine.requestStop()
+        app.commandRouter.clearPendingFollowUp()
         app.wakeWordEngine.resume()
         super.onDestroy()
     }
@@ -150,7 +151,7 @@ private fun GoogleAssistantOverlay(
     var promptText by remember { mutableStateOf("Hi, how can I help?") }
     val focusRequester = remember { FocusRequester() }
 
-    fun executeQuery(query: String) {
+    fun executeQuery(query: String, autoListenFollowUp: () -> Unit = {}) {
         val clean = query.trim()
         if (clean.isEmpty()) return
         transcript = clean
@@ -161,7 +162,13 @@ private fun GoogleAssistantOverlay(
             val res = app.commandRouter.handle(clean)
             response = res
             isThinking = false
-            app.ttsEngine.speak(res.spokenText)
+            if (res.expectFollowUp) {
+                app.ttsEngine.speak(res.spokenText) {
+                    autoListenFollowUp()
+                }
+            } else {
+                app.ttsEngine.speak(res.spokenText)
+            }
             res.dismissAfterMs?.let { ms ->
                 delay(ms)
                 onDismiss()
@@ -198,7 +205,7 @@ private fun GoogleAssistantOverlay(
                         amplitude = 0f
                         app.wakeWordEngine.resume()
                         if (finalText.isNotBlank()) {
-                            executeQuery(finalText)
+                            executeQuery(finalText) { startListening() }
                         } else {
                             promptText = "Didn't catch that. Tap the mic to try again."
                         }

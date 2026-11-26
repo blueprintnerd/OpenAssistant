@@ -54,62 +54,95 @@ class WebKnowledgeClient(
                 val name = place.optString("name", city)
                 val admin = place.optString("admin1", "")
                 val locationLabel = if (admin.isNotEmpty() && !admin.equals(name, true)) "$name, $admin" else name
-
-                val tempUnit = if (useFahrenheit) "fahrenheit" else "celsius"
-                val windUnit = if (useFahrenheit) "mph" else "kmh"
-                val unitSym = if (useFahrenheit) "F" else "C"
-                val windSym = if (useFahrenheit) "mph" else "km/h"
-
-                val weatherUrl =
-                    "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
-                        "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m" +
-                        "&daily=weather_code,temperature_2m_max,temperature_2m_min" +
-                        "&temperature_unit=$tempUnit&wind_speed_unit=$windUnit&timezone=auto&forecast_days=4"
-
-                val wJson = getJson(weatherUrl) ?: return@withContext null
-                val current = wJson.getJSONObject("current")
-                val temp = current.getDouble("temperature_2m").toInt()
-                val feels = current.getDouble("apparent_temperature").toInt()
-                val humidity = current.getInt("relative_humidity_2m")
-                val wind = current.getDouble("wind_speed_10m").toInt()
-                val code = current.getInt("weather_code")
-                val condition = wmoDescription(code)
-
-                val daily = wJson.optJSONObject("daily")
-                val forecast = mutableListOf<ForecastDay>()
-                if (daily != null) {
-                    val times = daily.optJSONArray("time")
-                    val codes = daily.optJSONArray("weather_code")
-                    val highs = daily.optJSONArray("temperature_2m_max")
-                    val lows = daily.optJSONArray("temperature_2m_min")
-                    val inFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                    val outFmt = SimpleDateFormat("EEE", Locale.US)
-                    val count = minOf(times?.length() ?: 0, 4)
-                    for (i in 0 until count) {
-                        val dateStr = times?.optString(i) ?: continue
-                        val dayLabel = if (i == 0) {
-                            "Today"
-                        } else {
-                            runCatching { outFmt.format(inFmt.parse(dateStr)!!) }.getOrDefault(dateStr)
-                        }
-                        forecast += ForecastDay(
-                            dayLabel = dayLabel,
-                            condition = wmoDescription(codes?.optInt(i) ?: 0),
-                            high = "${highs?.optDouble(i)?.toInt() ?: 0}°",
-                            low = "${lows?.optDouble(i)?.toInt() ?: 0}°",
-                        )
-                    }
-                }
-
-                WeatherCardData(
-                    location = locationLabel,
-                    temperature = "$temp°$unitSym",
-                    condition = condition,
-                    details = "Feels like $feels°$unitSym | Humidity $humidity% | Wind $wind $windSym",
-                    forecast = forecast,
-                )
+                fetchWeatherInternal(lat, lon, locationLabel, useFahrenheit)
             }.getOrNull()
         }
+
+    suspend fun fetchWeatherByCoords(lat: Double, lon: Double, useFahrenheit: Boolean): WeatherCardData? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val locationLabel = reverseGeocodeCity(lat, lon) ?: "Current Location"
+                fetchWeatherInternal(lat, lon, locationLabel, useFahrenheit)
+            }.getOrNull()
+        }
+
+    private fun reverseGeocodeCity(lat: Double, lon: Double): String? {
+        val url = "https://nominatim.openstreetmap.org/reverse?lat=$lat&lon=$lon&format=json&zoom=10"
+        val json = getJson(url) ?: return null
+        val addr = json.optJSONObject("address") ?: return null
+        val city = addr.optString("city").ifBlank {
+            addr.optString("town").ifBlank {
+                addr.optString("village").ifBlank { addr.optString("county") }
+            }
+        }
+        val state = addr.optString("state")
+        return when {
+            city.isNotBlank() && state.isNotBlank() -> "$city, $state"
+            city.isNotBlank() -> city
+            else -> null
+        }
+    }
+
+    private fun fetchWeatherInternal(
+        lat: Double,
+        lon: Double,
+        locationLabel: String,
+        useFahrenheit: Boolean,
+    ): WeatherCardData? {
+        val tempUnit = if (useFahrenheit) "fahrenheit" else "celsius"
+        val windUnit = if (useFahrenheit) "mph" else "kmh"
+        val unitSym = if (useFahrenheit) "F" else "C"
+        val windSym = if (useFahrenheit) "mph" else "km/h"
+
+        val weatherUrl =
+            "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
+                "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m" +
+                "&daily=weather_code,temperature_2m_max,temperature_2m_min" +
+                "&temperature_unit=$tempUnit&wind_speed_unit=$windUnit&timezone=auto&forecast_days=4"
+
+        val wJson = getJson(weatherUrl) ?: return null
+        val current = wJson.getJSONObject("current")
+        val temp = current.getDouble("temperature_2m").toInt()
+        val feels = current.getDouble("apparent_temperature").toInt()
+        val humidity = current.getInt("relative_humidity_2m")
+        val wind = current.getDouble("wind_speed_10m").toInt()
+        val code = current.getInt("weather_code")
+        val condition = wmoDescription(code)
+
+        val daily = wJson.optJSONObject("daily")
+        val forecast = mutableListOf<ForecastDay>()
+        if (daily != null) {
+            val times = daily.optJSONArray("time")
+            val codes = daily.optJSONArray("weather_code")
+            val highs = daily.optJSONArray("temperature_2m_max")
+            val lows = daily.optJSONArray("temperature_2m_min")
+            val inFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            val outFmt = SimpleDateFormat("EEE", Locale.US)
+            val count = minOf(times?.length() ?: 0, 4)
+            for (i in 0 until count) {
+                val dateStr = times?.optString(i) ?: continue
+                val dayLabel = if (i == 0) {
+                    "Today"
+                } else {
+                    runCatching { outFmt.format(inFmt.parse(dateStr)!!) }.getOrDefault(dateStr)
+                }
+                forecast += ForecastDay(
+                    dayLabel = dayLabel,
+                    condition = wmoDescription(codes?.optInt(i) ?: 0),
+                    high = "${highs?.optDouble(i)?.toInt() ?: 0}°",
+                    low = "${lows?.optDouble(i)?.toInt() ?: 0}°",
+                )
+            }
+        }
+
+        return WeatherCardData(
+            location = locationLabel,
+            temperature = "$temp°$unitSym",
+            condition = condition,
+            details = "Feels like $feels°$unitSym | Humidity $humidity% | Wind $wind $windSym",
+            forecast = forecast,
+        )
+    }
 
     suspend fun fetchWikipediaSummary(topic: String): WikiSummary? = withContext(Dispatchers.IO) {
         runCatching {

@@ -9,6 +9,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.location.LocationManager
 import android.media.AudioManager
 import android.net.Uri
 import android.os.BatteryManager
@@ -49,6 +50,8 @@ interface DeviceActions {
     fun openSettingsPanel(kind: String): String
     fun createCalendarEvent(title: String): String
     fun scheduleReminder(text: String, delayMillis: Long): String
+    fun scheduleReminderAt(text: String, triggerAtMillis: Long, timeLabel: String): String
+    fun getLastKnownCoordinates(): Pair<Double, Double>?
     fun openWebSearch(query: String): String
     fun openUrl(url: String): Boolean
 }
@@ -337,6 +340,12 @@ class AndroidDeviceActionExecutor(
 
     override fun scheduleReminder(text: String, delayMillis: Long): String {
         val triggerAt = System.currentTimeMillis() + delayMillis.coerceAtLeast(10_000L)
+        val mins = (delayMillis / 60_000L).coerceAtLeast(1)
+        return scheduleReminderAt(text, triggerAt, "in ${formatDuration((mins * 60).toInt())}")
+    }
+
+    override fun scheduleReminderAt(text: String, triggerAtMillis: Long, timeLabel: String): String {
+        val triggerAt = triggerAtMillis.coerceAtLeast(System.currentTimeMillis() + 10_000L)
         val item = ReminderItem(
             id = UUID.randomUUID().toString(),
             text = text,
@@ -358,8 +367,25 @@ class AndroidDeviceActionExecutor(
         runCatching {
             alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
         }
-        val mins = (delayMillis / 60_000L).coerceAtLeast(1)
-        return "Reminder set: $text (in ${formatDuration((mins * 60).toInt())})."
+        return "Reminder set: $text ($timeLabel)."
+    }
+
+    override fun getLastKnownCoordinates(): Pair<Double, Double>? {
+        val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!hasCoarse) return null
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+        return runCatching {
+            val providers = listOf(
+                LocationManager.GPS_PROVIDER,
+                LocationManager.NETWORK_PROVIDER,
+                LocationManager.PASSIVE_PROVIDER,
+            )
+            val best = providers.mapNotNull { p ->
+                runCatching { lm.getLastKnownLocation(p) }.getOrNull()
+            }.maxByOrNull { it.time }
+            best?.let { it.latitude to it.longitude }
+        }.getOrNull()
     }
 
     override fun openWebSearch(query: String): String {

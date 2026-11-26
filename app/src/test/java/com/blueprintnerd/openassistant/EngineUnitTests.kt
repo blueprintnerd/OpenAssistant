@@ -9,6 +9,7 @@ import com.blueprintnerd.openassistant.engine.CardType
 import com.blueprintnerd.openassistant.engine.CommandRouter
 import com.blueprintnerd.openassistant.engine.DeviceActions
 import com.blueprintnerd.openassistant.engine.MathEvaluator
+import com.blueprintnerd.openassistant.engine.SpeechNormalizer
 import com.blueprintnerd.openassistant.engine.UnitConverter
 import com.blueprintnerd.openassistant.speech.BpeKeywordTokenizer
 import kotlinx.coroutines.test.runTest
@@ -40,6 +41,8 @@ class EngineUnitTests {
         override fun openSettingsPanel(kind: String) = "Settings:$kind"
         override fun createCalendarEvent(title: String) = "Calendar:$title"
         override fun scheduleReminder(text: String, delayMillis: Long) = "Reminder:$text:$delayMillis"
+        override fun scheduleReminderAt(text: String, triggerAtMillis: Long, timeLabel: String) = "ReminderAt:$text:$timeLabel"
+        override fun getLastKnownCoordinates(): Pair<Double, Double>? = null
         override fun openWebSearch(query: String) = "Search:$query"
         override fun openUrl(url: String) = true
     }
@@ -171,5 +174,39 @@ class EngineUnitTests {
         router.handle("set my home address to 123 Main St")
         val homeNavResp = router.handle("navigate home")
         assertEquals("Nav:123 Main St", homeNavResp.body)
+    }
+
+    @Test
+    fun speechNormalizerHandlesSpokenNumbersAndFillers() = runTest {
+        assertEquals("set a timer for 5 minutes", SpeechNormalizer.normalize("Hey Google can you please set a timer for five minutes"))
+        assertEquals("wake me up at 7:30 am", SpeechNormalizer.normalize("wake me up at seven thirty am"))
+        assertEquals("set volume to 50 percent", SpeechNormalizer.normalize("please set volume to fifty percent"))
+        assertEquals("set a timer for 30 minutes", SpeechNormalizer.normalize("set a timer for half an hour"))
+
+        val device = FakeDeviceActions()
+        val store = FakeStore()
+        val router = CommandRouter(device, store)
+
+        // End-to-end spoken STT command
+        val spokenTimer = router.handle("Hey Google can you please set a timer for five minutes")
+        assertEquals("Timer:300:", spokenTimer.body)
+
+        val spokenAlarm = router.handle("wake me up at seven thirty am")
+        assertEquals("Alarm:7:30:", spokenAlarm.body)
+
+        // Multi-turn follow-up for timer & SMS
+        val askTimer = router.handle("set a timer")
+        assertTrue(askTimer.expectFollowUp)
+        val doneTimer = router.handle("ten minutes")
+        assertEquals("Timer:600:", doneTimer.body)
+
+        val askSms = router.handle("text Mom")
+        assertTrue(askSms.expectFollowUp)
+        val doneSms = router.handle("I'll be home soon")
+        assertEquals("SMS:Mom:I'll be home soon", doneSms.body)
+
+        // Absolute time reminder
+        val absRem = router.handle("remind me to pay rent tomorrow at 9 am")
+        assertTrue(absRem.body.startsWith("ReminderAt:pay rent:Tomorrow at 9:00 AM"))
     }
 }

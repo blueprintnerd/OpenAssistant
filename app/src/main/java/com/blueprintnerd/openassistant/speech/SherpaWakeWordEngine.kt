@@ -47,7 +47,10 @@ class SherpaWakeWordEngine(
     }
 
     @SuppressLint("MissingPermission")
-    fun start(onWakeWordDetected: (String) -> Unit): Boolean {
+    fun start(
+        isExternallyPaused: () -> Boolean = { false },
+        onWakeWordDetected: (String) -> Unit,
+    ): Boolean {
         if (running.get()) return true
         if (!modelManager.isInstalled(ModelKind.KWS)) {
             Log.w(TAG, "KWS model not installed")
@@ -105,7 +108,7 @@ class SherpaWakeWordEngine(
             paused.set(false)
 
             listenJob = scope.launch {
-                runCaptureLoop(kws, s, onWakeWordDetected)
+                runCaptureLoop(kws, s, isExternallyPaused, onWakeWordDetected)
             }
             true
         } catch (e: Exception) {
@@ -119,6 +122,7 @@ class SherpaWakeWordEngine(
     private suspend fun runCaptureLoop(
         kws: KeywordSpotter,
         kwsStream: OnlineStream,
+        isExternallyPaused: () -> Boolean,
         onWakeWordDetected: (String) -> Unit,
     ) {
         val minBuf = AudioRecord.getMinBufferSize(
@@ -132,7 +136,7 @@ class SherpaWakeWordEngine(
 
         try {
             while (scope.isActive && running.get()) {
-                if (paused.get()) {
+                if (paused.get() || isExternallyPaused()) {
                     audioRecord?.let {
                         runCatching { it.stop() }
                         runCatching { it.release() }

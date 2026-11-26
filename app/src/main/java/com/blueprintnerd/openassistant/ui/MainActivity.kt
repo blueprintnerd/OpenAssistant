@@ -1,10 +1,13 @@
 package com.blueprintnerd.openassistant.ui
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -296,49 +299,67 @@ private fun SimpleHomeScreen(
                 }
             }
 
-            // Step 3: Hey Google toggle
+            // Step 3: Hey Google toggle + Battery exemption when needed
             item {
+                val pm = context.getSystemService(PowerManager::class.java)
+                val ignoringBattery = pm?.isIgnoringBatteryOptimizations(context.packageName) == true
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(22.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "3. \"Hey Google\" Voice Match",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                text = "Wake your assistant hands-free anytime",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "3. \"Hey Google\" Voice Match",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = "Wake your assistant hands-free anytime",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = wakeEnabled,
+                                enabled = voicePackReady,
+                                onCheckedChange = { enabled ->
+                                    if (enabled && !hasMicPermission) {
+                                        requestPermissions()
+                                    } else {
+                                        wakeEnabled = enabled
+                                        app.preferences.wakeWordEnabled = enabled
+                                        if (enabled) {
+                                            WakeWordForegroundService.start(context)
+                                        } else {
+                                            WakeWordForegroundService.stop(context)
+                                        }
+                                    }
+                                },
                             )
                         }
-                        Switch(
-                            checked = wakeEnabled,
-                            enabled = voicePackReady,
-                            onCheckedChange = { enabled ->
-                                if (enabled && !hasMicPermission) {
-                                    requestPermissions()
-                                } else {
-                                    wakeEnabled = enabled
-                                    app.preferences.wakeWordEnabled = enabled
-                                    if (enabled) {
-                                        WakeWordForegroundService.start(context)
-                                    } else {
-                                        WakeWordForegroundService.stop(context)
+                        if (wakeEnabled && !ignoringBattery) {
+                            Spacer(Modifier.height(10.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    @SuppressLint("BatteryLife")
+                                    val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                        data = Uri.parse("package:${context.packageName}")
                                     }
-                                }
-                            },
-                        )
+                                    runCatching { context.startActivity(i) }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(20.dp),
+                            ) {
+                                Text("Keep \"Hey Google\" Running in Background")
+                            }
+                        }
                     }
                 }
             }
@@ -386,6 +407,16 @@ private fun SimpleSettingsScreen(
     var newPhrase by remember { mutableStateOf("") }
     var speakResponses by remember { mutableStateOf(app.preferences.speakResponses) }
     var chimeEnabled by remember { mutableStateOf(app.preferences.chimeEnabled) }
+    var pauseScreenOff by remember { mutableStateOf(app.preferences.pauseWakeWhenScreenOff) }
+    var hasLocationPerm by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val locPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> hasLocationPerm = granted }
     var useFahrenheit by remember { mutableStateOf(app.preferences.useFahrenheit) }
     var defaultCity by remember { mutableStateOf(app.preferences.defaultCity) }
     var homeAddress by remember { mutableStateOf(app.preferences.homeAddress) }
@@ -506,6 +537,27 @@ private fun SimpleSettingsScreen(
                         chimeEnabled = it
                         app.preferences.chimeEnabled = it
                     })
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Pause wake word when screen is off")
+                    Switch(checked = pauseScreenOff, onCheckedChange = {
+                        pauseScreenOff = it
+                        app.preferences.pauseWakeWhenScreenOff = it
+                    })
+                }
+                if (!hasLocationPerm) {
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = { locPermLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Text("Use Phone Location for Weather")
+                    }
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),

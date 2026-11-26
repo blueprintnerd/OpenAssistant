@@ -41,4 +41,5 @@ data class AssistantResponse(
     val actions: List<ResponseAction> = emptyList(),
     val suggestions: List<String> = emptyList(),
     val dismissAfterMs: Long? = null,
+    val expectFollowUp: Boolean = false,
 )

@@ -13,7 +13,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -22,19 +21,23 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -50,7 +53,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,7 +67,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -73,6 +77,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import com.blueprintnerd.openassistant.OpenAssistantApp
 import com.blueprintnerd.openassistant.R
 import com.blueprintnerd.openassistant.engine.AssistantResponse
@@ -91,6 +96,7 @@ class AssistActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         val autoListen = intent.getBooleanExtra(EXTRA_AUTO_LISTEN, true)
 
         setContent {
@@ -124,12 +130,6 @@ class AssistActivity : ComponentActivity() {
     }
 }
 
-/**
- * 1:1 Google Assistant overlay matching the official Assistant APK layouts:
- * - assistant_content.xml (logo header, conversation panel, assistant_prompt)
- * - user_chat_bubble.xml / assistant_chat_bubble.xml (radius 20dp, margin 40dp, overlay_gutter 24dp)
- * - inputui_layout.xml (mic_icon_backing 56dp, quantum_ic_keyboard, P6 Assistant glow)
- */
 @Composable
 private fun GoogleAssistantOverlay(
     app: OpenAssistantApp,
@@ -148,6 +148,7 @@ private fun GoogleAssistantOverlay(
     var typedInput by remember { mutableStateOf("") }
     var response by remember { mutableStateOf<AssistantResponse?>(null) }
     var promptText by remember { mutableStateOf("Hi, how can I help?") }
+    val focusRequester = remember { FocusRequester() }
 
     fun executeQuery(query: String) {
         val clean = query.trim()
@@ -181,6 +182,7 @@ private fun GoogleAssistantOverlay(
         }
         app.ttsEngine.stop()
         app.wakeWordEngine.pause()
+        showKeyboard = false
         isListening = true
         transcript = ""
         response = null
@@ -220,6 +222,12 @@ private fun GoogleAssistantOverlay(
         }
     }
 
+    LaunchedEffect(showKeyboard) {
+        if (showKeyboard) {
+            runCatching { focusRequester.requestFocus() }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -240,8 +248,7 @@ private fun GoogleAssistantOverlay(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .imePadding()
-                    .navigationBarsPadding()
+                    .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
                     .clickable(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() },
@@ -252,26 +259,11 @@ private fun GoogleAssistantOverlay(
                 shadowElevation = 24.dp,
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    // Top drag handle
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(width = 36.dp, height = 4.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.28f))
-                        )
-                    }
-
                     // Main Sheet Content
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp, bottom = 4.dp)
+                            .padding(top = 16.dp)
                             .verticalScroll(rememberScrollState()),
                     ) {
                         // Header row with authentic product_logo_assistant_color_24
@@ -297,11 +289,10 @@ private fun GoogleAssistantOverlay(
                             }
                         }
 
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(6.dp))
 
                         // Conversational Plate
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            // Initial Assistant Prompt ("Hi, how can I help?") matching @style/AssistantPrompt
                             if (transcript.isBlank() && response == null) {
                                 Text(
                                     text = promptText,
@@ -312,7 +303,6 @@ private fun GoogleAssistantOverlay(
                                 )
                             }
 
-                            // User Bubble matching @style/UserBubble (layout_gravity=end, radius=20dp)
                             if (transcript.isNotBlank()) {
                                 Row(
                                     modifier = Modifier
@@ -335,7 +325,6 @@ private fun GoogleAssistantOverlay(
                                 }
                             }
 
-                            // Assistant Answer Card
                             response?.let { res ->
                                 Box(modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)) {
                                     AssistantAnswerCard(
@@ -347,11 +336,11 @@ private fun GoogleAssistantOverlay(
                             }
                         }
 
-                        // Horizontal Suggestion Rail matching assistant_content.xml @id/suggest_rail
+                        // Horizontal Suggestion Rail
                         val chips = response?.suggestions?.ifEmpty { null }
                             ?: if (response == null && !isListening) CommandRouter.DEFAULT_SUGGESTIONS else emptyList()
                         if (chips.isNotEmpty()) {
-                            Spacer(Modifier.height(10.dp))
+                            Spacer(Modifier.height(8.dp))
                             LazyRow(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -380,111 +369,136 @@ private fun GoogleAssistantOverlay(
                             }
                         }
 
-                        // Keyboard Input Container matching inputui_keyboard.xml
+                        Spacer(Modifier.height(8.dp))
+
+                        // Match inputui_keyboard.xml vs inputui_layout.xml:
+                        // When keyboard is open, replace the mic plate cleanly with the flush 56dp type bar.
                         if (showKeyboard) {
-                            Spacer(Modifier.height(10.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 24.dp),
+                                    .height(56.dp)
+                                    .padding(start = 24.dp, end = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                OutlinedTextField(
-                                    value = typedInput,
-                                    onValueChange = { typedInput = it },
+                                Box(
                                     modifier = Modifier.weight(1f),
-                                    placeholder = { Text("Ask anything...") },
-                                    shape = RoundedCornerShape(24.dp),
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                                    keyboardActions = KeyboardActions(
-                                        onSend = {
+                                    contentAlignment = Alignment.CenterStart,
+                                ) {
+                                    if (typedInput.isEmpty()) {
+                                        Text(
+                                            text = "Type a message",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    BasicTextField(
+                                        value = typedInput,
+                                        onValueChange = { typedInput = it },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .focusRequester(focusRequester),
+                                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        ),
+                                        cursorBrush = SolidColor(AssistantBlue),
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                        keyboardActions = KeyboardActions(
+                                            onSend = {
+                                                val q = typedInput
+                                                typedInput = ""
+                                                executeQuery(q)
+                                            }
+                                        ),
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        if (typedInput.isBlank()) {
+                                            startListening()
+                                        } else {
                                             val q = typedInput
                                             typedInput = ""
                                             executeQuery(q)
                                         }
-                                    ),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                IconButton(
-                                    onClick = {
-                                        val q = typedInput
-                                        typedInput = ""
-                                        executeQuery(q)
                                     },
-                                    modifier = Modifier.size(44.dp),
+                                    modifier = Modifier.size(48.dp),
                                 ) {
                                     Image(
-                                        painter = painterResource(id = R.drawable.quantum_ic_send_googblue_24),
-                                        contentDescription = "Send",
+                                        painter = painterResource(
+                                            id = if (typedInput.isBlank()) {
+                                                R.drawable.ic_mic_color
+                                            } else {
+                                                R.drawable.quantum_ic_send_googblue_24
+                                            }
+                                        ),
+                                        contentDescription = if (typedInput.isBlank()) "Speak" else "Send",
                                         modifier = Modifier.size(24.dp),
                                     )
                                 }
                             }
-                        }
-
-                        Spacer(Modifier.height(8.dp))
-
-                        // Bottom Control Plate matching inputui_layout.xml:
-                        // - keyboard_indicator (left)
-                        // - mic_icon_backing (56dp center circular backing with ic_mic_color)
-                        // - Spacer / tap to finish (right)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                                .padding(horizontal = 24.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            IconButton(
-                                onClick = { showKeyboard = !showKeyboard },
-                                modifier = Modifier.size(48.dp),
-                            ) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.quantum_ic_keyboard_grey600_24),
-                                    contentDescription = "Keyboard",
-                                    modifier = Modifier.size(24.dp),
-                                )
-                            }
-
-                            // Center mic plate matching input_error_mic_icon_size = 56.0dp
-                            Box(
+                        } else {
+                            Row(
                                 modifier = Modifier
-                                    .size(56.dp)
-                                    .shadow(elevation = 3.dp, shape = CircleShape)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .clickable {
-                                        if (isListening) {
-                                            app.sttEngine.requestStop()
-                                        } else {
-                                            startListening()
-                                        }
-                                    },
-                                contentAlignment = Alignment.Center,
+                                    .fillMaxWidth()
+                                    .height(56.dp)
+                                    .padding(horizontal = 24.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
-                                if (isListening || isThinking) {
-                                    AssistantListeningDots(
-                                        amplitude = amplitude,
-                                        isListening = isListening,
-                                        isThinking = isThinking,
-                                    )
-                                } else {
+                                IconButton(
+                                    onClick = {
+                                        app.sttEngine.requestStop()
+                                        isListening = false
+                                        showKeyboard = true
+                                    },
+                                    modifier = Modifier.size(48.dp),
+                                ) {
                                     Image(
-                                        painter = painterResource(id = R.drawable.ic_mic_color),
-                                        contentDescription = "Microphone",
-                                        modifier = Modifier.size(28.dp),
+                                        painter = painterResource(id = R.drawable.quantum_ic_keyboard_grey600_24),
+                                        contentDescription = "Keyboard",
+                                        modifier = Modifier.size(24.dp),
                                     )
                                 }
-                            }
 
-                            // Right invisible touch target to balance layout symmetry
-                            Box(modifier = Modifier.size(48.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .shadow(elevation = 3.dp, shape = CircleShape)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable {
+                                            if (isListening) {
+                                                app.sttEngine.requestStop()
+                                            } else {
+                                                startListening()
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (isListening || isThinking) {
+                                        AssistantListeningDots(
+                                            amplitude = amplitude,
+                                            isListening = isListening,
+                                            isThinking = isThinking,
+                                        )
+                                    } else {
+                                        Image(
+                                            painter = painterResource(id = R.drawable.ic_mic_color),
+                                            contentDescription = "Microphone",
+                                            modifier = Modifier.size(28.dp),
+                                        )
+                                    }
+                                }
+
+                                Box(modifier = Modifier.size(48.dp))
+                            }
                         }
                     }
 
-                    // Bottom Edge Glow matching AssistantP6GlowView in inputui_layout.xml
+                    // 4-color bar: ONLY shown when actively listening/talking
                     AssistantGlowingEdgeBar(
                         amplitude = amplitude,
                         isListening = isListening,

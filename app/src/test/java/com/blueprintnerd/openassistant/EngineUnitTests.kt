@@ -11,6 +11,7 @@ import com.blueprintnerd.openassistant.engine.DeviceActions
 import com.blueprintnerd.openassistant.engine.MathEvaluator
 import com.blueprintnerd.openassistant.engine.SpeechNormalizer
 import com.blueprintnerd.openassistant.engine.UnitConverter
+import com.blueprintnerd.openassistant.engine.WebKnowledgeClient
 import com.blueprintnerd.openassistant.speech.BpeKeywordTokenizer
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -208,5 +209,24 @@ class EngineUnitTests {
         // Absolute time reminder
         val absRem = router.handle("remind me to pay rent tomorrow at 9 am")
         assertTrue(absRem.body.startsWith("ReminderAt:pay rent:Tomorrow at 9:00 AM"))
+    }
+
+    @Test
+    fun duckDuckGoLiteParserFiltersAdsAndExtractsResults() {
+        val sampleHtml = """
+            <table>
+              <tr><td><a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fduckduckgo.com%2Fy.js%3Fad_domain%3Dtiqets.com" class='result-link'>Sponsored Ad</a></td></tr>
+              <tr><td class='result-snippet'>Buy tickets now!</td></tr>
+              <tr><td><a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FEiffel_Tower" class='result-link'>Eiffel Tower - Wikipedia</a></td></tr>
+              <tr><td class='result-snippet'>The Eiffel Tower is 330 meters tall in Paris, France.</td></tr>
+              <tr><td><span class='link-text'>en.wikipedia.org/wiki/Eiffel_Tower</span></td></tr>
+            </table>
+        """.trimIndent()
+        val results = WebKnowledgeClient().parseDuckDuckGoLiteHtml(sampleHtml, maxResults = 3)
+        assertEquals(1, results.size)
+        assertEquals("Eiffel Tower - Wikipedia", results[0].title)
+        assertEquals("https://en.wikipedia.org/wiki/Eiffel_Tower", results[0].url)
+        assertEquals("en.wikipedia.org/wiki/Eiffel_Tower", results[0].displayUrl)
+        assertTrue(results[0].snippet.contains("330 meters"))
     }
 }

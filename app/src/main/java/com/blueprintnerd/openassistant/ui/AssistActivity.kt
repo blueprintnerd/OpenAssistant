@@ -3,6 +3,7 @@ package com.blueprintnerd.openassistant.ui
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -74,11 +75,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -93,8 +98,11 @@ import com.blueprintnerd.openassistant.ui.components.AssistantGlowingEdgeBar
 import com.blueprintnerd.openassistant.ui.theme.AssistantBlue
 import com.blueprintnerd.openassistant.ui.theme.AssistantGreen
 import com.blueprintnerd.openassistant.ui.theme.OpenAssistantTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.URL
 
 class AssistActivity : ComponentActivity() {
     private val app by lazy { application as OpenAssistantApp }
@@ -616,6 +624,212 @@ private fun AssistantResponseContent(
             }
         }
 
+        // Knowledge Panel Card (Google Knowledge Graph style: title, subtitle, thumbnail, facts)
+        response.cardType == CardType.KNOWLEDGE && response.knowledge != null -> {
+            val k = response.knowledge
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 4.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                shape = RoundedCornerShape(22.dp),
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = k.title,
+                                style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            if (k.subtitle.isNotBlank()) {
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = k.subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        if (!k.imageUrl.isNullOrBlank()) {
+                            Spacer(Modifier.width(12.dp))
+                            RemoteThumbnailImage(
+                                url = k.imageUrl,
+                                contentDescription = k.title,
+                                modifier = Modifier
+                                    .size(72.dp)
+                                    .clip(RoundedCornerShape(14.dp)),
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = k.summary,
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 21.sp),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+
+                    if (k.facts.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        Spacer(Modifier.height(8.dp))
+                        k.facts.forEach { (label, value) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 3.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    text = value,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.End,
+                                )
+                            }
+                        }
+                    }
+
+                    if (response.actions.isNotEmpty()) {
+                        Spacer(Modifier.height(14.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            response.actions.forEachIndexed { idx, action ->
+                                if (idx == 0) {
+                                    Button(
+                                        onClick = { action.url?.let(onActionUrl) },
+                                        shape = RoundedCornerShape(20.dp),
+                                    ) { Text(action.label) }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { action.url?.let(onActionUrl) },
+                                        shape = RoundedCornerShape(20.dp),
+                                    ) { Text(action.label) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Google-style Web Search Retrieval & Clickable Result Cards
+        response.cardType == CardType.SEARCH_RESULTS && response.searchResults.isNotEmpty() -> {
+            val top = response.searchResults.first()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                // Featured answer card at top
+                if (top.snippet.isNotBlank()) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onActionUrl(top.url) },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(20.dp),
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = top.snippet,
+                                style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 22.sp),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = top.title,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = AssistantBlue,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = top.displayUrl,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+
+                // Horizontal carousel of clickable web result cards (Google Assistant style)
+                val carouselItems = if (top.snippet.isNotBlank()) response.searchResults.drop(1) else response.searchResults
+                if (carouselItems.isNotEmpty()) {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(carouselItems) { item ->
+                            Card(
+                                modifier = Modifier
+                                    .width(235.dp)
+                                    .clickable { onActionUrl(item.url) },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+                                ),
+                                shape = RoundedCornerShape(18.dp),
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Text(
+                                        text = item.displayUrl.substringBefore("/"),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = item.title,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = AssistantBlue,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (item.snippet.isNotBlank()) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = item.snippet,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 3,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                response.actions.firstOrNull()?.let { more ->
+                    OutlinedButton(
+                        onClick = { more.url?.let(onActionUrl) },
+                        shape = RoundedCornerShape(20.dp),
+                    ) {
+                        Text(more.label)
+                    }
+                }
+            }
+        }
+
         // Rich structured cards (Weather, Calculator, Wikipedia/Dictionary, List, or actions)
         else -> {
             Card(
@@ -768,5 +982,36 @@ private fun AssistantResponseContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RemoteThumbnailImage(
+    url: String,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+) {
+    var bitmap by remember(url) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(url) {
+        bitmap = withContext(Dispatchers.IO) {
+            runCatching {
+                val conn = URL(url).openConnection().apply {
+                    setRequestProperty("User-Agent", "OpenAssistant/1.1")
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                }
+                conn.getInputStream().use { stream ->
+                    BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                }
+            }.getOrNull()
+        }
+    }
+    bitmap?.let { img ->
+        Image(
+            bitmap = img,
+            contentDescription = contentDescription,
+            contentScale = ContentScale.Crop,
+            modifier = modifier,
+        )
     }
 }

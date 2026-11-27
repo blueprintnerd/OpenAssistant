@@ -5,6 +5,8 @@ enum class CardType {
     WEATHER,
     CALCULATOR,
     WIKIPEDIA,
+    KNOWLEDGE,
+    SEARCH_RESULTS,
     LIST,
     ACTION_CONFIRMATION,
     ERROR,
@@ -25,6 +27,23 @@ data class WeatherCardData(
     val forecast: List<ForecastDay> = emptyList(),
 )
 
+data class KnowledgeCardData(
+    val title: String,
+    val subtitle: String = "",
+    val summary: String,
+    val imageUrl: String? = null,
+    val sourceLabel: String = "Wikipedia",
+    val sourceUrl: String? = null,
+    val facts: List<Pair<String, String>> = emptyList(),
+)
+
+data class SearchResultItem(
+    val title: String,
+    val snippet: String,
+    val displayUrl: String,
+    val url: String,
+)
+
 data class ResponseAction(
     val label: String,
     val command: String? = null,
@@ -37,6 +56,8 @@ data class AssistantResponse(
     val spokenText: String = body,
     val cardType: CardType = CardType.TEXT,
     val weather: WeatherCardData? = null,
+    val knowledge: KnowledgeCardData? = null,
+    val searchResults: List<SearchResultItem> = emptyList(),
     val listItems: List<String> = emptyList(),
     val actions: List<ResponseAction> = emptyList(),
     val suggestions: List<String> = emptyList(),

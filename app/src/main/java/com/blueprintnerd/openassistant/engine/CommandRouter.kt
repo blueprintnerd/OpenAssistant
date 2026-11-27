@@ -591,39 +591,80 @@ class CommandRouter(
             }
         }
 
-        // 24. Explicit Web Search
+        // 24. Explicit Web Search (retrieve live search cards inside the overlay)
         Regex("""^(?:search(?: the web)? for|look up|google)\s+(.+)$""", RegexOption.IGNORE_CASE)
             .matchEntire(input)?.let { m ->
                 val q = m.groupValues[1].trim()
+                val results = web.fetchWebSearchResults(q, maxResults = 4)
+                if (results.isNotEmpty()) {
+                    val top = results.first()
+                    val spoken = if (top.snippet.isNotBlank()) {
+                        "Here's what I found. ${truncateSentences(top.snippet, 1)}"
+                    } else {
+                        "Here are web results for $q."
+                    }
+                    return AssistantResponse(
+                        title = "Web Results",
+                        body = top.snippet.ifBlank { top.title },
+                        spokenText = spoken,
+                        cardType = CardType.SEARCH_RESULTS,
+                        searchResults = results,
+                        actions = listOf(
+                            ResponseAction(label = "More on ${store.searchEngine.label}", url = searchUrlFor(q)),
+                        ),
+                    )
+                }
                 val msg = device.openWebSearch(q)
                 return AssistantResponse("Web Search", msg, cardType = CardType.ACTION_CONFIRMATION)
             }
 
-        // 25. Factual Knowledge Lookup (Wikipedia + DuckDuckGo Instant Answers — zero LLM, zero Google)
+        // 25. Knowledge Graph Card (Wikipedia + DuckDuckGo Infobox) & Web Search Retrieval
         val topic = extractKnowledgeTopic(input)
-        val wiki = web.fetchWikipediaSummary(topic)
+        val isEntityQuestion = lower.matches(
+            Regex("""^(?:who is|who was|what is|what are|what was|where is|tell me about|explain)\s+.+$""")
+        ) || topic.split(" ").size <= 3
+
+        val ddg = web.fetchDuckDuckGoInstantAnswer(input)
+        val wiki = if (isEntityQuestion) web.fetchWikipediaSummary(topic) else null
+
         if (wiki != null) {
             val concise = truncateSentences(wiki.extract, 2)
             return AssistantResponse(
                 title = wiki.title,
                 body = concise,
                 spokenText = concise,
-                cardType = CardType.WIKIPEDIA,
+                cardType = CardType.KNOWLEDGE,
+                knowledge = KnowledgeCardData(
+                    title = wiki.title,
+                    subtitle = wiki.description,
+                    summary = concise,
+                    imageUrl = wiki.thumbnailUrl ?: ddg?.imageUrl,
+                    sourceLabel = "Wikipedia",
+                    sourceUrl = wiki.url,
+                    facts = ddg?.facts.orEmpty(),
+                ),
                 actions = listOf(
-                    ResponseAction(label = "Read on Wikipedia", url = wiki.url),
+                    ResponseAction(label = "Wikipedia", url = wiki.url),
                     ResponseAction(label = "Search ${store.searchEngine.label}", url = searchUrlFor(input)),
                 ),
             )
         }
 
-        val ddg = web.fetchDuckDuckGoInstantAnswer(input)
         if (ddg != null) {
             val concise = truncateSentences(ddg.text, 2)
             return AssistantResponse(
                 title = ddg.heading,
                 body = concise,
                 spokenText = concise,
-                cardType = CardType.WIKIPEDIA,
+                cardType = CardType.KNOWLEDGE,
+                knowledge = KnowledgeCardData(
+                    title = ddg.heading,
+                    summary = concise,
+                    imageUrl = ddg.imageUrl,
+                    sourceLabel = "DuckDuckGo",
+                    sourceUrl = ddg.url,
+                    facts = ddg.facts,
+                ),
                 actions = buildList {
                     ddg.url?.let { add(ResponseAction("Open Source", url = it)) }
                     add(ResponseAction("Search ${store.searchEngine.label}", url = searchUrlFor(input)))
@@ -631,11 +672,33 @@ class CommandRouter(
             )
         }
 
-        // 26. Fallback: Offer privacy-respecting web search
+        // Live Web Search Retrieval & Cards (zero Google servers, zero LLM)
+        val webResults = web.fetchWebSearchResults(input, maxResults = 4)
+        if (webResults.isNotEmpty()) {
+            val top = webResults.first()
+            val domain = top.displayUrl.substringBefore("/")
+            val spoken = if (top.snippet.isNotBlank()) {
+                "According to $domain, ${truncateSentences(top.snippet, 1)}"
+            } else {
+                "Here is what I found for $input."
+            }
+            return AssistantResponse(
+                title = "From the web",
+                body = top.snippet.ifBlank { top.title },
+                spokenText = spoken,
+                cardType = CardType.SEARCH_RESULTS,
+                searchResults = webResults,
+                actions = listOf(
+                    ResponseAction(label = "More on ${store.searchEngine.label}", url = searchUrlFor(input)),
+                ),
+            )
+        }
+
+        // 26. Offline fallback: Offer privacy-respecting web search
         return AssistantResponse(
             title = "Web Search",
-            body = "I didn't find an instant answer for \"$input\". Tap below to search with ${store.searchEngine.label}.",
-            spokenText = "I couldn't find an instant answer, so here is a web search.",
+            body = "I couldn't reach the web right now. Tap below to search with ${store.searchEngine.label}.",
+            spokenText = "I couldn't reach the web right now.",
             actions = listOf(
                 ResponseAction(label = "Search ${store.searchEngine.label}", url = searchUrlFor(input)),
             ),

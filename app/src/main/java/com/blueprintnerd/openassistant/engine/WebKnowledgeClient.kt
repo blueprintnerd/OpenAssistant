@@ -8,6 +8,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.URLDecoder
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -15,8 +16,10 @@ import java.util.concurrent.TimeUnit
 
 data class WikiSummary(
     val title: String,
+    val description: String = "",
     val extract: String,
     val url: String,
+    val thumbnailUrl: String? = null,
 )
 
 data class DictionaryResult(
@@ -32,6 +35,8 @@ data class InstantAnswer(
     val heading: String,
     val text: String,
     val url: String?,
+    val imageUrl: String? = null,
+    val facts: List<Pair<String, String>> = emptyList(),
 )
 
 class WebKnowledgeClient(
@@ -152,9 +157,11 @@ class WebKnowledgeClient(
             if (direct != null && direct.optString("type") != "disambiguation" && direct.optString("extract").isNotBlank()) {
                 return@withContext WikiSummary(
                     title = direct.optString("title", topic),
+                    description = direct.optString("description", ""),
                     extract = direct.optString("extract"),
                     url = direct.optJSONObject("content_urls")?.optJSONObject("desktop")?.optString("page")
                         ?: "https://en.wikipedia.org/wiki/$encoded",
+                    thumbnailUrl = direct.optJSONObject("thumbnail")?.optString("source")?.takeIf { it.isNotBlank() },
                 )
             }
 
@@ -179,9 +186,11 @@ class WebKnowledgeClient(
             if (extract.isBlank()) return@withContext null
             WikiSummary(
                 title = summary.optString("title", resolvedTitle),
+                description = summary.optString("description", ""),
                 extract = extract,
                 url = summary.optJSONObject("content_urls")?.optJSONObject("desktop")?.optString("page")
                     ?: "https://en.wikipedia.org/wiki/$resolvedEnc",
+                thumbnailUrl = summary.optJSONObject("thumbnail")?.optString("source")?.takeIf { it.isNotBlank() },
             )
         }.getOrNull()
     }
@@ -245,13 +254,131 @@ class WebKnowledgeClient(
                 ?: json.optString("AbstractText").takeIf { it.isNotBlank() }
                 ?: json.optString("Definition").takeIf { it.isNotBlank() }
                 ?: return@withContext null
+
+            val rawImg = json.optString("Image")
+            val imageUrl = when {
+                rawImg.startsWith("http") -> rawImg
+                rawImg.startsWith("/") -> "https://duckduckgo.com$rawImg"
+                else -> null
+            }
+
+            val facts = mutableListOf<Pair<String, String>>()
+            val infobox = json.optJSONObject("Infobox")?.optJSONArray("content")
+            if (infobox != null) {
+                for (i in 0 until infobox.length()) {
+                    if (facts.size >= 4) break
+                    val item = infobox.optJSONObject(i) ?: continue
+                    val dataType = item.optString("data_type")
+                    val label = item.optString("label").trim()
+                    val value = item.optString("value").trim()
+                    if (dataType == "string" && label.isNotBlank() && value.isNotBlank() && value.length <= 60) {
+                        facts += label to value
+                    }
+                }
+            }
+
             InstantAnswer(
                 heading = json.optString("Heading").ifBlank { query },
                 text = answer,
                 url = json.optString("AbstractURL").takeIf { it.isNotBlank() },
+                imageUrl = imageUrl,
+                facts = facts,
             )
         }.getOrNull()
     }
+
+    suspend fun fetchWebSearchResults(query: String, maxResults: Int = 4): List<SearchResultItem> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val encoded = URLEncoder.encode(query.trim(), "UTF-8")
+                val req = Request.Builder()
+                    .url("https://lite.duckduckgo.com/lite/?q=$encoded")
+                    .header("User-Agent", BROWSER_USER_AGENT)
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                    .build()
+                val html = httpClient.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) null else resp.body?.string()
+                } ?: return@withContext emptyList()
+                parseDuckDuckGoLiteHtml(html, maxResults)
+            }.getOrDefault(emptyList())
+        }
+
+    internal fun parseDuckDuckGoLiteHtml(html: String, maxResults: Int = 4): List<SearchResultItem> {
+        val results = mutableListOf<SearchResultItem>()
+        val rowRegex = Regex("""<tr[^>]*>(.*?)</tr>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+        val linkRegex = Regex("""<a[^>]*href="([^"]+)"[^>]*class=['"]result-link['"][^>]*>(.*?)</a>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+        val snipRegex = Regex("""class=['"]result-snippet['"][^>]*>(.*?)</td>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+        val urlTextRegex = Regex("""class=['"]link-text['"][^>]*>(.*?)</span>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+
+        val rows = rowRegex.findAll(html).map { it.groupValues[1] }.toList()
+        var idx = 0
+        while (idx < rows.size && results.size < maxResults) {
+            val linkMatch = linkRegex.find(rows[idx])
+            if (linkMatch != null) {
+                val rawHref = unescapeHtml(linkMatch.groupValues[1])
+                val directUrl = extractDirectUrl(rawHref)
+                val title = stripHtml(linkMatch.groupValues[2])
+                val isAd = directUrl.contains("ad_domain=") ||
+                    directUrl.contains("duckduckgo.com/y.js") ||
+                    directUrl.contains("duckduckgo-help-pages") ||
+                    rawHref.contains("ad_domain")
+
+                if (!isAd && title.isNotBlank()) {
+                    var snippet = ""
+                    var displayUrl = directUrl.removePrefix("https://").removePrefix("http://").substringBefore("/")
+                    for (lookAhead in 1..3) {
+                        if (idx + lookAhead >= rows.size) break
+                        val nextRow = rows[idx + lookAhead]
+                        if (linkRegex.containsMatchIn(nextRow)) break
+                        if (snippet.isEmpty()) {
+                            snipRegex.find(nextRow)?.let { snippet = stripHtml(it.groupValues[1]) }
+                        }
+                        urlTextRegex.find(nextRow)?.let {
+                            val d = stripHtml(it.groupValues[1])
+                            if (d.isNotBlank()) displayUrl = d
+                        }
+                    }
+                    if (directUrl.startsWith("http")) {
+                        results += SearchResultItem(
+                            title = title,
+                            snippet = snippet,
+                            displayUrl = displayUrl,
+                            url = directUrl,
+                        )
+                    }
+                }
+            }
+            idx++
+        }
+        return results
+    }
+
+    private fun extractDirectUrl(href: String): String {
+        val uddgMatch = Regex("""[?&]uddg=([^&]+)""").find(href)
+        if (uddgMatch != null) {
+            return runCatching { URLDecoder.decode(uddgMatch.groupValues[1], "UTF-8") }.getOrDefault(href)
+        }
+        return when {
+            href.startsWith("http") -> href
+            href.startsWith("//") -> "https:$href"
+            else -> href
+        }
+    }
+
+    private fun stripHtml(raw: String): String {
+        val noTags = raw.replace(Regex("<[^>]+>"), " ")
+        return unescapeHtml(noTags).replace(Regex("\\s+"), " ").trim()
+    }
+
+    private fun unescapeHtml(text: String): String = text
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&#x27;", "'")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&nbsp;", " ")
 
     suspend fun callHomeAssistantService(
         baseUrl: String,
@@ -353,6 +480,8 @@ class WebKnowledgeClient(
     }
 
     companion object {
-        private const val USER_AGENT = "OpenAssistant/1.0 (https://github.com/blueprintnerd/OpenAssistant)"
+        private const val USER_AGENT = "OpenAssistant/1.1 (https://github.com/blueprintnerd/OpenAssistant)"
+        private const val BROWSER_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
     }
 }
